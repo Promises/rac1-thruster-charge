@@ -140,21 +140,11 @@ constexpr std::int32_t kChargePoseLoopTo = 24;
 // draw_joint_aligned_beam_effect (visibomb_and_pyrocitor.c:621-757): two quads of effect texture 0xC
 // in a neutral colour (0x80808080), a glow quad of texture 0xB tinted 0x7F2020FF, and a ribbon of 196
 // points of texture 0xA in the colours of the table joint_beam_ribbon_colors (PAL D_L00_001DA9D0,
-// NTSC D_L00_001DA6D0), which nothing else draws with. Of the three only that table is data; the
-// other colours are constants in the code, and emit_beam_trail_particles' sparks (spawn_burst
-// 0x4F007FFF) too. So during a charge the ribbon is tinted blue, and the rest stays as it is.
+// NTSC D_L00_001DA6D0), which nothing else draws with. The table is data: during a charge it is
+// tinted blue here (blue_flame, thruster_charge.hpp). The quads, the glow and the sparks
+// (emit_beam_trail_particles' spawn_burst, 0x4F007FFF fading to 0x1FFFFFFF) are recoloured in
+// mod.cpp's effect hooks, by FlameTint.
 constexpr std::size_t kRibbonColours = 196;
-
-// A ribbon colour (the PS2's RGBA, R in the low byte, 0x80 full), tinted blue: its alpha kept, its
-// brightest channel as blue, green at 0x50 / 0x80 of it and red at 0x18 / 0x80. The colour modulates
-// the texture's, so a texture of the fire's own colours comes out darker as well as bluer.
-inline std::uint32_t blue_flame(std::uint32_t rgba) {
-    const std::uint32_t r = rgba & 0xFFu;
-    const std::uint32_t g = (rgba >> 8) & 0xFFu;
-    const std::uint32_t b = (rgba >> 16) & 0xFFu;
-    const std::uint32_t i = r > g ? (r > b ? r : b) : (g > b ? g : b);
-    return (rgba & 0xFF000000u) | (i << 16) | ((i * 0x50u / 0x80u) << 8) | (i * 0x18u / 0x80u);
-}
 
 // Ratchet's hover hum (his class's sound 0x12, which the hover loops in voice slot 4): Going
 // Commando's charge loops its own sound 0xD there, which Ratchet & Clank does not have.

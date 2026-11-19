@@ -585,17 +585,41 @@ void the_charge_takes_the_long_jumps_pose() {
     check(gc::shim().bonking() && f.animations.size() == 1, "the bonk: the wall bonk's own animation");
 }
 
-void blue_flames() {
-    check(gc::blue_flame(0x80808080u) == 0x80805018u, "full grey: blue, a little green");
-    check(gc::blue_flame(0x20808080u) == 0x20805018u, "its alpha kept");
-    check(gc::blue_flame(0x7F2020FFu) == 0x7FFF9F2Fu, "the brightest channel is the blue");
-    check(gc::blue_flame(0u) == 0u, "black stays black");
+void one_blue_for_every_part_of_the_flame() {
+    check(blue_flame(0x80808080u) == 0x80FF5018u, "the quads' and the ribbon's neutral grey: full blue, doubled");
+    check(blue_flame(0x20808080u) == 0x20FF5018u, "the ribbon's faint ends: their alpha kept");
+    check(blue_flame(0x7F2020FFu) == 0x7FFF9F2Fu, "the red glow: the same blue, as bright");
+    check(blue_flame(0x4F007FFFu) == 0x4FFF9F2Fu, "the orange sparks");
+    check(blue_flame(0x1FFFFFFFu) == 0x1FFF9F2Fu, "fading to a faint blue, not white");
+    check(blue_flame(0u) == 0u, "black stays black");
+    check(blue_flame(0x80404040u) == 0x8080280Cu, "a dimmer colour: a dimmer blue of the same hue");
+}
 
+void the_tint_is_only_the_flames_in_a_charge() {
+    FlameTint tint;
+    check(!tint.on(), "off at first");
+    bool was = tint.enter(false);
+    check(!tint.on(), "the flame's code, no charge: off");
+    tint.leave(was);
+    was = tint.enter(true);
+    check(tint.on(), "the flame's code in a charge: on");
+    tint.leave(was);
+    check(!tint.on(), "off again after it");
+
+    std::uint32_t colours[4] = {0x80808080u, 0x80808080u, 0x7F2020FFu, 0x20808080u};
+    const std::array<std::uint32_t, 4> was_colours = FlameTint::tint_quad(colours);
+    check(colours[0] == 0x80FF5018u && colours[2] == 0x7FFF9F2Fu && colours[3] == 0x20FF5018u, "a quad drawn blue");
+    FlameTint::restore_quad(colours, was_colours);
+    check(colours[0] == 0x80808080u && colours[2] == 0x7F2020FFu && colours[3] == 0x20808080u,
+          "its record as the caller left it");
+}
+
+void the_ribbon_is_blue_in_a_charge() {
     Fake& f = fresh();
     const std::uint32_t first = f.disc.ribbon_l00;
     start_charge(f);
-    check(f.mem().read<std::uint32_t>(first) == gc::blue_flame(0x20808080u) &&
-              f.mem().read<std::uint32_t>(first + 4) == gc::blue_flame(0x80808080u),
+    check(f.mem().read<std::uint32_t>(first) == blue_flame(0x20808080u) &&
+              f.mem().read<std::uint32_t>(first + 4) == blue_flame(0x80808080u),
           "the ribbon blue in a charge");
     f.set(kStateTimer, 100);
     f.pad(false, false);
@@ -634,7 +658,9 @@ int main() {
     other_ends_of_a_charge();
     a_wall_bonks_him_back();
     the_charge_takes_the_long_jumps_pose();
-    blue_flames();
+    one_blue_for_every_part_of_the_flame();
+    the_tint_is_only_the_flames_in_a_charge();
+    the_ribbon_is_blue_in_a_charge();
     if (failures != 0) {
         std::printf("%d failed\n", failures);
         return 1;

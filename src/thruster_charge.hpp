@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //
 // Thruster Charge's rules that are this mod's, not Going Commando's: which of the game's own
-// changes of state a charge refuses, how often a moby takes the charge's hit, and the tick's
-// length. The charge itself is Going Commando's Charge Boots code (src/gc/), run on Ratchet &
+// changes of state a charge refuses, how often a moby takes the charge's hit, the blue of its
+// flames, and the tick's length. The charge itself is Going Commando's Charge Boots code (src/gc/), run on Ratchet &
 // Clank's hero and his Thruster-Pack by the translation layer (src/gc/rac1_shim.hpp).
 //
 // Nothing here reads the game: mod.cpp does, and the tests test the rules on plain values.
@@ -116,6 +116,65 @@ private:
         float until = -1.0f;
     };
     std::array<Entry, 8> m_entries{};
+};
+
+// --- The blue flames ---
+//
+// Every colour the Thruster-Pack's flames are drawn in is a PS2 RGBA word: red in the low byte,
+// then green, blue, and alpha in the high byte, where 0x80 is full (the GS modulates a texture by
+// colour / 0x80, and blends by alpha / 0x80): the flame quads' 0x80808080 (texture 0xC as it is),
+// the glow's 0x7F2020FF (texture 0xB doubled in red), the ribbon table's 0x80808080 and 0x20808080
+// (texture 0xA as it is), the sparks' 0x4F007FFF fading to 0x1FFFFFFF (orange to white).
+//
+// One blue for all of them: the colour's brightest channel kept as the brightness, the hue set to
+// red 0x18 : green 0x50 : blue 0x80 of it, blue then doubled (to at most 0xFF) so a texture of the
+// fire's own warm colours, modulated, still comes out a bright blue rather than a dark one. The
+// alpha is kept, so each part fades and blends as the game made it.
+constexpr std::uint32_t kBlueRed = 0x18;
+constexpr std::uint32_t kBlueGreen = 0x50;
+constexpr std::uint32_t kBlueBlue = 0x100;
+
+inline std::uint32_t blue_flame(std::uint32_t rgba) {
+    const std::uint32_t r = rgba & 0xFFu;
+    const std::uint32_t g = (rgba >> 8) & 0xFFu;
+    const std::uint32_t b = (rgba >> 16) & 0xFFu;
+    const std::uint32_t i = std::max(r, std::max(g, b));
+    const std::uint32_t red = i * kBlueRed / 0x80u;
+    const std::uint32_t green = i * kBlueGreen / 0x80u;
+    const std::uint32_t blue = std::min(0xFFu, i * kBlueBlue / 0x80u);
+    return (rgba & 0xFF000000u) | (blue << 16) | (green << 8) | red;
+}
+
+// The Thruster-Pack flames' own code, recoloured while he charges: on around the flame's update
+// (its sparks) and its draw (its quads), only during a charge, so every other effect drawn with the
+// same routines keeps its colours.
+class FlameTint {
+public:
+    // Around a call of the flame's code: on for it when he charges. Returns what to restore after.
+    bool enter(bool charging) {
+        const bool was = m_on;
+        m_on = charging;
+        return was;
+    }
+    void leave(bool was) { m_on = was; }
+    bool on() const { return m_on; }
+
+    // An effect quad's four colours (its record's +0x40..+0x4F), blue; what they were, for after.
+    static std::array<std::uint32_t, 4> tint_quad(std::uint32_t (&colours)[4]) {
+        const std::array<std::uint32_t, 4> was{colours[0], colours[1], colours[2], colours[3]};
+        for (std::uint32_t& c : colours) {
+            c = blue_flame(c);
+        }
+        return was;
+    }
+    static void restore_quad(std::uint32_t (&colours)[4], const std::array<std::uint32_t, 4>& was) {
+        for (std::size_t i = 0; i < 4; ++i) {
+            colours[i] = was[i];
+        }
+    }
+
+private:
+    bool m_on = false;
 };
 
 }  // namespace thruster_charge

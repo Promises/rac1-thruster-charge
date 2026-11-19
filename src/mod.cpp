@@ -21,13 +21,23 @@
 //                                        refused while he charges (thruster_charge::judge)
 // and the entries of rac1.player.approach_speed, set_planar_velocity, turn_to_heading and
 // enter_move_state, which the translation layer calls in place of Going Commando's functions.
-// The movement one is new in OpenRAC (branch rac1-steer-hook), declared in movement_hook.hpp until
-// the SDK has it; a game without it refuses the mod with the reason.
+// And the blue flames: while he charges, the Thruster-Pack flame's own code runs recoloured
+// (tc::FlameTint) through
+//   rac1.moby.moby167.update             the flame moby's update (class 0xA7), which spawns its sparks
+//   rac1.fx.thruster_flame.draw          the flame's draw, which draws its quads
+//   rac1.fx.world_quad.draw              each effect quad: the flame's drawn in blue
+//   rac1.fx.burst.spawn                  each spark: the flame's spawned in blue
+// and the translation layer tints its ribbon's colour table.
+// The movement hook point and the three fx ones are new in OpenRAC (branch rac1-steer-hook),
+// declared in branch_hooks.hpp until the SDK has them; a game without one refuses the mod with
+// the reason.
 //
 // The charge is his whenever the Thruster-Pack is on his back (the hover's own gate): its double tap
 // of R1 charges instead of hovering. With the Heli-Pack or no pack, R1 does what the game does. The
 // Thruster-Pack's long jump and its boost in the air are the game's.
+#include <array>
 #include <cstdint>
+#include <cstring>
 
 #include "openrac/games/rac1.hpp"
 #include "openrac/mod.hpp"
@@ -35,7 +45,7 @@
 #include "thruster_charge.hpp"
 #include "gc/rac1_shim.hpp"
 #include "layout.hpp"
-#include "movement_hook.hpp"
+#include "branch_hooks.hpp"
 
 namespace {
 
@@ -43,8 +53,14 @@ namespace tc = thruster_charge;
 namespace gc = thruster_charge::gc;
 namespace rac1 = openrac::rac1;
 
-// TODO(movement hook): openrac::rac1::Hero_UpdateMovement once the SDK has it (movement_hook.hpp).
+// TODO(branch hooks): openrac::rac1's types once the SDK has them (branch_hooks.hpp).
 using UpdateMovement = tc::hooks::Hero_UpdateMovement;
+using DrawWorldQuad = tc::hooks::FX_DrawWorldQuad;
+using DrawThrusterFlame = tc::hooks::FX_ThrusterFlame_Draw;
+using SpawnBurst = tc::hooks::FX_SpawnBurst;
+
+// An effect quad record's four RGBA words (FX_DrawWorldQuad).
+constexpr std::uint32_t kQuadColours = 0x40;
 
 struct State {
     openrac::Mod* mod = nullptr;
@@ -53,6 +69,8 @@ struct State {
     bool mine = false;
     // The level connect() last saw (-2: none yet).
     int level = -2;
+    // On while the Thruster-Pack flame's own code runs in a charge.
+    tc::FlameTint flames;
 };
 
 State& state() {
@@ -220,6 +238,46 @@ void load(openrac::Mod& mod) {
         l.flush();
     });
 
+    // The blue flames. The flame's update and draw: the tint on around them while he charges.
+    mod.hook<rac1::Moby_Class167_Update>([](auto original, std::uint32_t moby) {
+        State& st = state();
+        const bool was = st.flames.enter(layer().charging());
+        original(moby);
+        st.flames.leave(was);
+    });
+    mod.hook<DrawThrusterFlame>([](auto original, std::uint32_t flame) {
+        State& st = state();
+        const bool was = st.flames.enter(layer().charging());
+        original(flame);
+        st.flames.leave(was);
+    });
+    // Each effect quad, many a frame: straight to the game unless it is the flame's in a charge;
+    // then drawn blue, and its record (the caller's, which may draw it again) put back.
+    mod.hook<DrawWorldQuad>([](auto original, std::uint32_t quad, std::uint32_t matrix, std::int32_t mode) {
+        State& st = state();
+        if (!st.flames.on()) {
+            original(quad, matrix, mode);
+            return;
+        }
+        std::uint8_t* record = st.mod->memory().base() + quad + kQuadColours;
+        std::uint32_t colours[4];
+        std::memcpy(colours, record, sizeof colours);
+        const std::array<std::uint32_t, 4> was = tc::FlameTint::tint_quad(colours);
+        std::memcpy(record, colours, sizeof colours);
+        original(quad, matrix, mode);
+        tc::FlameTint::restore_quad(colours, was);
+        std::memcpy(record, colours, sizeof colours);
+    });
+    // Each spark: the flame's spawned blue, fading to a paler blue (its children take its colour).
+    mod.hook<SpawnBurst>([](auto original, std::uint32_t pos, std::uint32_t dir, std::int32_t colour,
+                            std::int32_t fade, std::int32_t ticks, std::int32_t children, float size) {
+        if (state().flames.on()) {
+            colour = static_cast<std::int32_t>(tc::blue_flame(static_cast<std::uint32_t>(colour)));
+            fade = static_cast<std::int32_t>(tc::blue_flame(static_cast<std::uint32_t>(fade)));
+        }
+        return original(pos, dir, colour, fade, ticks, children, size);
+    });
+
     mod.hook<rac1::Hero_EnterMoveState>([](auto original, std::int32_t asked, std::int32_t force) -> std::int32_t {
         State& st = state();
         const openrac::Memory m = st.mod->memory();
@@ -249,4 +307,4 @@ void load(openrac::Mod& mod) {
 
 }  // namespace
 
-OPENRAC_MOD_CPP("thruster-charge", "0.4.0", load)
+OPENRAC_MOD_CPP("thruster-charge", "0.5.0", load)
