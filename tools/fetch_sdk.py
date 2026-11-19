@@ -16,7 +16,7 @@ sdk.lock: commit it, and every later build is held to it. This file is the SDK's
 
 This mod's copy also takes an SDK that has no release yet: a lock with "git" (OpenRAC's repository)
 and "commit" (a full commit id) instead of "url" and "sha256" takes the SDK's source folder, sdk/,
-from that commit (a sparse checkout, with git), checks that its sdk/VERSION is the lock's version,
+from that commit (that commit alone, shallow, a sparse checkout of sdk/, with git), checks that its sdk/VERSION is the lock's version,
 and puts it where the archive would go. Back to a released SDK with a lock of url and sha256.
 """
 from __future__ import annotations
@@ -29,11 +29,47 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import urllib.request
 import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+
+
+# Attempts at the fetch (a network that drops it now and then), and the wait between them.
+FETCH_ATTEMPTS = 3
+FETCH_RETRY_SECONDS = 10
+
+
+def fetch_commit(repo: str, commit: str, src: Path) -> bool:
+    """sdk/ of the one commit of repo into src: an empty repository, the sparse checkout of sdk/ set
+    before anything is fetched, then that commit alone (depth 1, its blobs as the checkout needs
+    them), not the repository's history. GitHub serves a commit by its id. Tries FETCH_ATTEMPTS
+    times."""
+    git = ["git", "-c", "advice.detachedHead=false", "-C", str(src)]
+    setup = (
+        ["git", "init", "--quiet", str(src)],
+        [*git, "remote", "add", "origin", repo],
+        [*git, "sparse-checkout", "set", "sdk"],
+    )
+    for step in setup:
+        if subprocess.run(step, stdout=sys.stderr).returncode != 0:
+            print(f"fetch_sdk: {' '.join(step)} failed", file=sys.stderr)
+            return False
+    fetch = [*git, "fetch", "--quiet", "--depth", "1", "--filter=blob:none", "origin", commit]
+    for attempt in range(1, FETCH_ATTEMPTS + 1):
+        if subprocess.run(fetch, stdout=sys.stderr).returncode == 0:
+            break
+        print(f"fetch_sdk: fetching {commit[:9]} failed (attempt {attempt} of {FETCH_ATTEMPTS})", file=sys.stderr)
+        if attempt == FETCH_ATTEMPTS:
+            return False
+        time.sleep(FETCH_RETRY_SECONDS)
+    checkout = [*git, "checkout", "--quiet", "FETCH_HEAD"]
+    if subprocess.run(checkout, stdout=sys.stderr).returncode != 0:
+        print("fetch_sdk: checking out the fetched commit failed", file=sys.stderr)
+        return False
+    return True
 
 
 def from_git(lock: dict) -> int:
@@ -51,15 +87,8 @@ def from_git(lock: dict) -> int:
     dest.mkdir(exist_ok=True)
     with tempfile.TemporaryDirectory(dir=dest) as tmp:
         src = Path(tmp) / "openrac"
-        git = ["git", "-c", "advice.detachedHead=false"]
-        for step in (
-            [*git, "clone", "--quiet", "--filter=blob:none", "--no-checkout", repo, str(src)],
-            [*git, "-C", str(src), "sparse-checkout", "set", "sdk"],
-            [*git, "-C", str(src), "checkout", "--quiet", commit],
-        ):
-            if subprocess.run(step, stdout=sys.stderr).returncode != 0:
-                print(f"fetch_sdk: {' '.join(step[3:])} failed", file=sys.stderr)
-                return 1
+        if not fetch_commit(repo, commit, src):
+            return 1
         got = (src / "sdk" / "VERSION").read_text().strip()
         if got != version:
             print(f"fetch_sdk: the SDK at {commit[:9]} is {got}, sdk.lock says {version}", file=sys.stderr)
