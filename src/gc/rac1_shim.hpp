@@ -152,6 +152,12 @@ constexpr std::int32_t kChargePoseTo = 5;
 
 enum class PoseMotion { PingPong, Loop, Hold };
 
+// The back and forth's speed (the setting pose_rate): times the frame's own rate, 0.9 by default
+// (the player's pick on the box: 10% slower than the animation).
+constexpr float kPoseSpeedDefault = 0.9f;
+constexpr float kPoseSpeedMin = 0.2f;
+constexpr float kPoseSpeedMax = 2.0f;
+
 // The setting pose_motion's value; an unknown one is the default.
 inline PoseMotion pose_motion_named(const char* name) {
     const std::string_view v = name != nullptr ? name : "";
@@ -528,6 +534,10 @@ public:
     void play_animation(std::int32_t gc_animation, std::int32_t blend, float frames);
     // The charge's pose settings (frames of the long jump's animation; from == to: frozen).
     void set_pose(std::int32_t from, std::int32_t to, PoseMotion motion = PoseMotion::PingPong);
+    // The back and forth's speed: a multiplier on the frame's own rate (pose_rate).
+    void set_pose_speed(float scale) {
+        m_pose_speed = std::isfinite(scale) ? std::clamp(scale, kPoseSpeedMin, kPoseSpeedMax) : kPoseSpeedDefault;
+    }
     // Each tick of a charge, after the copied movement: the pose held, the long jump's sounds off.
     void hold_pose();
     // Going Commando's frame timer decremented by a tick (math_fast_float_d).
@@ -577,6 +587,7 @@ private:
     bool m_pingpong = false;
     bool m_pingpong_started = false;
     PingPong m_pingpong_at;
+    float m_pose_speed = kPoseSpeedDefault;
     std::uint32_t m_pose_sequence = 0;
     std::int32_t m_pose_first = 0;
     std::int32_t m_pose_last = 0;

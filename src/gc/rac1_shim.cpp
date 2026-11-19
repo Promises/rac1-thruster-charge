@@ -403,7 +403,7 @@ void Shim::hold_pose() {
     } else {
         const FramePair now = frame_pair(m_pingpong_at.at(), m_pose_last);
         const std::uint32_t data = m.read<std::uint32_t>(m_pose_sequence + kSequenceFrames + static_cast<std::uint32_t>(now.a) * 4);
-        m_pingpong_at.step(pose_rate(data != 0 ? m.read<float>(data) : 0.0f));
+        m_pingpong_at.step(pose_rate(data != 0 ? m.read<float>(data) : 0.0f) * m_pose_speed);
     }
     const FramePair p = frame_pair(m_pingpong_at.at(), m_pose_last);
     m.write(moby + kMobyFrame, static_cast<std::uint8_t>(p.a));

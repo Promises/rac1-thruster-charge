@@ -108,6 +108,8 @@ Fake& fresh(float frame_time = kNtsc) {
     g_fake = &fake;
     s.set_speed_scale(1.0f);
     s.set_pose(gc::kChargePoseFrom, gc::kChargePoseTo);
+    // The animation's own rate in these tests (the setting's default is 0.9 of it).
+    s.set_pose_speed(1.0f);
     s.set_tick(frame_time);
     std::memset(gc_shim_hero, 0, gc::kHeroBytes);
     std::memset(gc_shim_lean, 0, gc::kLeanBytes);
@@ -821,6 +823,27 @@ void the_ribbon_is_blue_in_a_charge() {
           "another level loaded: its memory is not written with the last one's colours");
 }
 
+void the_pose_speed_scales_the_back_and_forth() {
+    Fake& f = fresh(kPal);
+    gc::shim().set_pose_speed(gc::kPoseSpeedDefault);
+    start_charge(f);
+    const gc::Memory m = f.mem();
+    m.write(kFakeMoby + gc::kMobySequence, static_cast<std::uint8_t>(gc::kChargePose));
+    m.write(kFakeMoby + gc::kMobyNextSequence, static_cast<std::uint8_t>(gc::kChargePose));
+    tick(f);
+    tick(f);
+    check(near(shown(f), 3.0f + 0.5f * 0.9f), "the default: 0.9 of the frame's rate a tick");
+    gc::shim().set_pose_speed(2.0f);
+    tick(f);
+    check(near(shown(f), 3.45f + 1.0f), "changed while he charges: twice it, from the next tick");
+    gc::shim().set_pose_speed(50.0f);
+    tick(f);
+    check(near(shown(f), 4.55f), "at most twice: a frame on, past 5 and back by what is left");
+    gc::shim().set_pose_speed(NAN);
+    tick(f);
+    check(near(shown(f), 4.1f), "not a number: the default, still going back");
+}
+
 }  // namespace
 
 int main() {
@@ -842,6 +865,7 @@ int main() {
     another_charge_after_the_lockout();
     other_ends_of_a_charge();
     a_wall_bonks_him_back();
+    the_pose_speed_scales_the_back_and_forth();
     pose_frames_are_clamped();
     the_pingpong_is_a_triangle_wave();
     the_charge_plays_the_long_jumps_flight_back_and_forth();

@@ -87,6 +87,7 @@ void read_settings(openrac::Mod& mod) {
     layer().set_speed_scale(mod.setting<float>("speed"));
     layer().set_pose(mod.setting<std::int32_t>("pose_loop_from"), mod.setting<std::int32_t>("pose_loop_to"),
                      gc::pose_motion_named(mod.setting<std::string>("pose_motion").c_str()));
+    layer().set_pose_speed(mod.setting<float>("pose_rate"));
 }
 
 // The game as the translation layer reaches it in the level loaded now: each level has its own
@@ -316,4 +317,4 @@ void load(openrac::Mod& mod) {
 
 }  // namespace
 
-OPENRAC_MOD_CPP("thruster-charge", "0.6.2", load)
+OPENRAC_MOD_CPP("thruster-charge", "0.6.3", load)
