@@ -59,6 +59,8 @@ struct Fake {
     std::vector<std::pair<std::int32_t, std::int32_t>> enters;
     std::vector<gc::Hit> hits;
     std::vector<std::pair<std::int32_t, bool>> sounds;
+    std::vector<std::pair<std::int32_t, float>> animations;
+    std::vector<std::pair<std::int32_t, std::int32_t>> loops;
     int stops = 0;
     std::int32_t moby_ahead = -1;
     bool wall_ahead = false;
@@ -141,6 +143,14 @@ Fake& fresh(float frame_time = kNtsc) {
     };
     g.sound_stop = [](std::int32_t) { ++g_fake->stops; };
     g.log = [](const char* what) { std::printf("layer: %s\n", what); };
+    g.set_animation = [](std::int32_t animation, std::int32_t, float frames) {
+        g_fake->animations.emplace_back(animation, frames);
+    };
+    g.loop_animation = [](std::int32_t from, std::int32_t to) { g_fake->loops.emplace_back(from, to); };
+    g.ribbon = fake.disc.ribbon_l00;
+    for (std::size_t i = 0; i < gc::kRibbonColours; ++i) {
+        fake.mem().write(fake.disc.ribbon_l00 + static_cast<std::uint32_t>(i * 4), i % 7 == 0 ? 0x20808080u : 0x80808080u);
+    }
     fake.set(kHeroState, kIdle);
     fake.set(kControlMode, kModeIdle);
     fake.set(kGroundedFrames, 10);
@@ -248,8 +258,8 @@ void states_and_animations_map() {
     check(gc::gc_control_mode(kModeRun, gc::kGcCharge) == gc::kGcChargeControlMode, "control mode 28 in a charge");
     check(gc::gc_control_mode(kModeRun, gc::kGcBonk) == gc::kGcBonkControlMode, "10 in its bonk");
     check(gc::gc_control_mode(kModeCrouch, kIdle) == kModeCrouch, "else the same number");
-    check(gc::rac1_animation(0x8B) == 0x13 && gc::rac1_animation(0x29) == 0x29 && gc::rac1_animation(6) == -1,
-          "animations");
+    check(gc::rac1_animation(0x8B) == 0x26 && gc::rac1_animation(0x29) == -1 && gc::rac1_animation(6) == -1,
+          "animations: the charge the long jump's, the bonk and the stop their states' own");
 }
 
 void the_field_table_is_sound() {
@@ -556,6 +566,53 @@ void a_wall_bonks_him_back() {
     check(gc::shim().bonking(), "a wall in reach ahead: the bonk");
 }
 
+void the_charge_takes_the_long_jumps_pose() {
+    Fake& f = fresh();
+    start_charge(f);
+    check(f.animations.size() == 1 && f.animations[0].first == gc::kChargePose && f.animations[0].second == -2.0f,
+          "the long jump's animation, on Going Commando's blend curve");
+    check(f.loops.size() == 1 && f.loops[0].first == gc::kChargePoseLoopFrom &&
+              f.loops[0].second == gc::kChargePoseLoopTo,
+          "held in its flight");
+    for (int i = 0; i < 30; ++i) {
+        tick(f);
+    }
+    check(f.animations.size() == 1, "not started again while he charges");
+    f.set(kStateTimer, 100);
+    f.set(kWallHit, std::uint8_t{1});
+    f.set(kDisplacement, 0.0f);
+    tick(f);
+    check(gc::shim().bonking() && f.animations.size() == 1, "the bonk: the wall bonk's own animation");
+}
+
+void blue_flames() {
+    check(gc::blue_flame(0x80808080u) == 0x80805018u, "full grey: blue, a little green");
+    check(gc::blue_flame(0x20808080u) == 0x20805018u, "its alpha kept");
+    check(gc::blue_flame(0x7F2020FFu) == 0x7FFF9F2Fu, "the brightest channel is the blue");
+    check(gc::blue_flame(0u) == 0u, "black stays black");
+
+    Fake& f = fresh();
+    const std::uint32_t first = f.disc.ribbon_l00;
+    start_charge(f);
+    check(f.mem().read<std::uint32_t>(first) == gc::blue_flame(0x20808080u) &&
+              f.mem().read<std::uint32_t>(first + 4) == gc::blue_flame(0x80808080u),
+          "the ribbon blue in a charge");
+    f.set(kStateTimer, 100);
+    f.pad(false, false);
+    tick(f);
+    check(!gc::shim().charging(), "stopped");
+    check(f.mem().read<std::uint32_t>(first) == 0x20808080u && f.mem().read<std::uint32_t>(first + 4) == 0x80808080u,
+          "orange again after it");
+
+    f = fresh();
+    start_charge(f);
+    gc::shim().game.ribbon = first + 0x1000;
+    f.mem().write(first + 0x1000, 0x12345678u);
+    gc::shim().reset();
+    check(f.mem().read<std::uint32_t>(first + 0x1000) == 0x12345678u,
+          "another level loaded: its memory is not written with the last one's colours");
+}
+
 }  // namespace
 
 int main() {
@@ -576,6 +633,8 @@ int main() {
     letting_go_of_r1_stops_it_after_61_frames();
     other_ends_of_a_charge();
     a_wall_bonks_him_back();
+    the_charge_takes_the_long_jumps_pose();
+    blue_flames();
     if (failures != 0) {
         std::printf("%d failed\n", failures);
         return 1;

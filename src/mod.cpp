@@ -75,12 +75,14 @@ void connect(openrac::Mod& mod) {
         return;
     }
     s.level = level;
-    layer().reset();
     gc::Game& g = layer().game;
     g.memory = gc::Memory{mod.memory().base()};
     g.hero = s.disc.hero;
     g.pad = s.disc.pad;
     g.lean = level >= 0 ? mod.relocate_level(0, s.disc.lean_l00) : 0;
+    g.ribbon = level >= 0 ? mod.relocate_level(0, s.disc.ribbon_l00) : 0;
+    // After the new level's addresses: the last level's tint is not written into this one.
+    layer().reset();
 
     const auto approach = mod.hook_entry<rac1::Hero_ApproachSpeed>();
     g.approach_speed = approach == nullptr ? nullptr : std::function<void(float, float)>(approach);
@@ -102,8 +104,22 @@ void connect(openrac::Mod& mod) {
 
 // The SDK's calls the translation layer needs, set once at load.
 void connect_once(openrac::Mod& mod) {
+    State& s = state();
     gc::Game& g = layer().game;
     openrac::Mod* m = &mod;
+    // Ratchet's animation (set_hero_animation) and its loop (hero_queue_sequence): level 0's build,
+    // which the port runs in any level as its own hero_grab does (port/game/rac1/host/hero_grab.c
+    // calls func_L00_00232C10 whatever the level).
+    using SetAnimation = void (*)(std::int32_t, std::int32_t, float);
+    using LoopAnimation = void (*)(std::int32_t, std::int32_t);
+    const auto set_animation = mod.function<SetAnimation>(s.disc.set_hero_animation);
+    const auto loop_animation = mod.function<LoopAnimation>(s.disc.hero_queue_sequence);
+    if (set_animation == nullptr || loop_animation == nullptr) {
+        mod.warn("Thruster Charge: Ratchet's animation functions not found: the charge keeps the hover's pose");
+    } else {
+        g.set_animation = set_animation;
+        g.loop_animation = loop_animation;
+    }
     g.self_slot = [m] { return m->figure_slot(-1); };
     if (mod.has_collision_line()) {
         g.moby_on_line = [m](const float* from, const float* to) -> std::int32_t {
@@ -233,4 +249,4 @@ void load(openrac::Mod& mod) {
 
 }  // namespace
 
-OPENRAC_MOD_CPP("thruster-charge", "0.3.0", load)
+OPENRAC_MOD_CPP("thruster-charge", "0.4.0", load)

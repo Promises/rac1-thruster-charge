@@ -98,16 +98,22 @@ inline std::int32_t gc_control_mode(std::int32_t rac1_mode, std::int32_t gc_stat
 }
 
 // An animation of Going Commando's and Ratchet & Clank's in its place; -1: the state's own, which
-// Ratchet & Clank's change of state starts.
+// Ratchet & Clank's change of state starts (nothing more to play).
 struct AnimationMap {
     std::int32_t gc;
     std::int32_t rac1;
 };
 
+// The charge's pose: the Thruster-Pack long jump's (state 0x10, R1 or R2 and X), animation 0x26,
+// which its entry starts (HeroEnterMoveState, hero_vehicle_and_collision.c:1997-2004:
+// set_hero_animation(0x26, 0, scale_ticks(5 or 8))). The hover's entry starts its own (0x13,
+// hero_vehicle_and_collision.c:1509-1511) first; the charge's entry then plays this one over it.
+constexpr std::int32_t kChargePose = 0x26;
+
 inline constexpr std::array<AnimationMap, 3> kAnimations{{
-    {0x8B, 0x13},  // the charge: the hover's
-    {0x29, 0x29},  // the bonk: the same number in both
-    {0x06, -1},    // the stop's skid: the stop state's own
+    {0x8B, kChargePose},  // the charge: the long jump's
+    {0x29, -1},           // the bonk: the wall bonk's own (0x29 in both games)
+    {0x06, -1},           // the stop's skid: the stop state's own
 }};
 
 inline std::int32_t rac1_animation(std::int32_t gc) {
@@ -117,6 +123,37 @@ inline std::int32_t rac1_animation(std::int32_t gc) {
         }
     }
     return -1;
+}
+
+// The long jump is one jump: its animation plays once (its takeoff, flight and landing over about 40
+// frames; its own hits stop at frame 28, hero_water_and_ground_motion.c:2526-2528, and its flight
+// is from the apex frame 18 toward 30, hero_vehicle_and_collision.c:1798-1800). A charge lasts
+// seconds: the pose holds in the flight between these frames, looped by Ratchet & Clank's own
+// hero_queue_sequence (hero_mapped_animations.c:428-437: past frame `to` the animation goes back to
+// `from`, advance_hero_animation, hero_mapped_animations.c). Picked from those numbers, not seen:
+// to be tuned in the game.
+constexpr std::int32_t kChargePoseLoopFrom = 20;
+constexpr std::int32_t kChargePoseLoopTo = 24;
+
+// The Thruster-Pack's flames (class 0xA7 mobys, thruster_pack_flame_update, visibomb_and_pyrocitor.c:
+// 897-1000) show in the hover, so during the charge. Each draws its flame in
+// draw_joint_aligned_beam_effect (visibomb_and_pyrocitor.c:621-757): two quads of effect texture 0xC
+// in a neutral colour (0x80808080), a glow quad of texture 0xB tinted 0x7F2020FF, and a ribbon of 196
+// points of texture 0xA in the colours of the table joint_beam_ribbon_colors (PAL D_L00_001DA9D0,
+// NTSC D_L00_001DA6D0), which nothing else draws with. Of the three only that table is data; the
+// other colours are constants in the code, and emit_beam_trail_particles' sparks (spawn_burst
+// 0x4F007FFF) too. So during a charge the ribbon is tinted blue, and the rest stays as it is.
+constexpr std::size_t kRibbonColours = 196;
+
+// A ribbon colour (the PS2's RGBA, R in the low byte, 0x80 full), tinted blue: its alpha kept, its
+// brightest channel as blue, green at 0x50 / 0x80 of it and red at 0x18 / 0x80. The colour modulates
+// the texture's, so a texture of the fire's own colours comes out darker as well as bluer.
+inline std::uint32_t blue_flame(std::uint32_t rgba) {
+    const std::uint32_t r = rgba & 0xFFu;
+    const std::uint32_t g = (rgba >> 8) & 0xFFu;
+    const std::uint32_t b = (rgba >> 16) & 0xFFu;
+    const std::uint32_t i = r > g ? (r > b ? r : b) : (g > b ? g : b);
+    return (rgba & 0xFF000000u) | (i << 16) | ((i * 0x50u / 0x80u) << 8) | (i * 0x18u / 0x80u);
 }
 
 // Ratchet's hover hum (his class's sound 0x12, which the hover loops in voice slot 4): Going
@@ -303,6 +340,12 @@ struct Game {
     std::function<std::int32_t(std::int32_t sound, bool loop)> sound_play;
     std::function<void(std::int32_t voice)> sound_stop;
     std::function<void(const char*)> log;
+    // set_hero_animation(animation, blend, frames) and hero_queue_sequence(from, to), Ratchet &
+    // Clank's own (mod.cpp finds them by name).
+    std::function<void(std::int32_t animation, std::int32_t blend, float frames)> set_animation;
+    std::function<void(std::int32_t from, std::int32_t to)> loop_animation;
+    // The flames' ribbon colours in the level loaded now (0: none).
+    std::uint32_t ribbon = 0;
 };
 
 class Shim {
@@ -351,6 +394,8 @@ public:
     }
     // The charge's looping sound, kept this tick.
     void keep_sound();
+    // Going Commando's animation in Ratchet & Clank's terms (gc_shim_set_hero_animation).
+    void play_animation(std::int32_t gc_animation, std::int32_t blend, float frames);
     // Going Commando's frame timer decremented by a tick (math_fast_float_d).
     std::int32_t step_frame_timer(std::int32_t* timer);
     // Whether the hero's items' input runs (ProcessHeroEquippedItemInput's early returns): his feet
@@ -368,6 +413,9 @@ public:
 
 private:
     void end_charge();
+    // The flames' ribbon blue while he charges, and back.
+    void tint_flames();
+    void untint_flames();
     std::int32_t rac1_state_now() const;
 
     float m_k = 1.0f;
@@ -381,6 +429,9 @@ private:
     float m_timer_carry = 0.0f;
     HitCooldown m_hits;
     std::uint32_t m_unreachable_logged = 0;
+    // The ribbon's colours as they were, and where (0: not tinted).
+    std::array<std::uint32_t, kRibbonColours> m_ribbon_saved{};
+    std::uint32_t m_ribbon_tinted = 0;
 };
 
 Shim& shim();

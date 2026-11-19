@@ -256,6 +256,7 @@ void Shim::end_charge() {
         game.sound_stop(m_voice);
     }
     m_voice = -1;
+    untint_flames();
 }
 
 std::int32_t Shim::enter_state(std::int32_t gc_action) {
@@ -274,6 +275,7 @@ std::int32_t Shim::enter_state(std::int32_t gc_action) {
         m_bonking = gc_action == kGcBonk;
         if (m_charging) {
             m_hits.clear();
+            tint_flames();
         }
     }
     if (was_charging && !m_charging) {
@@ -306,6 +308,42 @@ bool Shim::handles_unambiguous() const {
         }
     }
     return true;
+}
+
+void Shim::play_animation(std::int32_t gc_animation, std::int32_t blend, float frames) {
+    const std::int32_t animation = rac1_animation(gc_animation);
+    if (animation < 0 || !game.set_animation) {
+        return;
+    }
+    // Going Commando's frames are Ratchet & Clank's: below 0 a blend curve (the hover's entry passes
+    // -2 too), above it a time in frames.
+    game.set_animation(animation, blend, frames);
+    if (animation == kChargePose && game.loop_animation) {
+        game.loop_animation(kChargePoseLoopFrom, kChargePoseLoopTo);
+    }
+}
+
+void Shim::tint_flames() {
+    if (game.ribbon == 0 || m_ribbon_tinted != 0 || game.memory.base == nullptr) {
+        return;
+    }
+    for (std::size_t i = 0; i < kRibbonColours; ++i) {
+        const std::uint32_t at = game.ribbon + static_cast<std::uint32_t>(i * 4);
+        m_ribbon_saved[i] = game.memory.read<std::uint32_t>(at);
+        game.memory.write(at, blue_flame(m_ribbon_saved[i]));
+    }
+    m_ribbon_tinted = game.ribbon;
+}
+
+void Shim::untint_flames() {
+    // Only where it was tinted, and only while that level is loaded: a level's program brings its
+    // own table, untinted.
+    if (m_ribbon_tinted != 0 && m_ribbon_tinted == game.ribbon && game.memory.base != nullptr) {
+        for (std::size_t i = 0; i < kRibbonColours; ++i) {
+            game.memory.write(m_ribbon_tinted + static_cast<std::uint32_t>(i * 4), m_ribbon_saved[i]);
+        }
+    }
+    m_ribbon_tinted = 0;
 }
 
 void Shim::keep_sound() {
@@ -546,11 +584,13 @@ void gc_shim_h_cam_set_view_space_height(std::int32_t, std::int32_t, float) {
     shim().unreachable("Thruster Charge: cam_set_view_space_height reached (magnetic ground): not translated");
 }
 
-// set_hero_animation: his animation. Nothing here: Ratchet & Clank's change of state started the
-// state's own (gc_shim_enter_state), which is kAnimations' for the charge (the hover's 0x13 for
-// Going Commando's 0x8B) and the bonk (0x29 in both). The stop's skid (Going Commando's 6) is the
-// stop state's own animation instead.
-void gc_shim_set_hero_animation(std::int32_t /*animation*/, std::int32_t /*blend*/, float /*frames*/) {}
+// set_hero_animation(animation, blend, frames): his animation. Ratchet & Clank's own
+// set_hero_animation (hero_mapped_animations.c:342-404) with kAnimations' id: the charge's 0x8B is
+// the Thruster-Pack long jump's 0x26, held in its flight (Shim::play_animation); the bonk's and the
+// stop's are their states' own, which Ratchet & Clank's change of state started.
+void gc_shim_set_hero_animation(std::int32_t animation, std::int32_t blend, float frames) {
+    shim().play_animation(animation, blend, frames);
+}
 
 // cam_set_limits_first, _third, _fourth (rac2-decomp L00_002A6420.c:442-464): despite rac2-decomp's
 // names, they set the spring of body-tilt records 0, 2 and 3 (their rows are 0xB0 bytes, the pair at

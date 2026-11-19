@@ -101,13 +101,25 @@ struct Disc {
     // 0's address (PAL D_L00_0017A780, NTSC D_L00_0017A680, the NTSC decomp's hero_eases): every
     // level has its own copy, which relocate_level(0, ...) finds.
     std::uint32_t lean_l00;
+    // The Thruster-Pack flames' ribbon colours (joint_beam_ribbon_colors, 196 words, read only by
+    // draw_joint_aligned_beam_effect): level 0's address, relocated as lean_l00 is (PAL
+    // D_L00_001DA9D0, NTSC D_L00_001DA6D0: the NTSC decomp's thruster_pack_flame.c).
+    std::uint32_t ribbon_l00;
+    // Ratchet's animation functions by their names in the disc's build (level 0's): set_hero_animation
+    // (PAL func_L00_00232C10; NTSC FUN_L00_002323b8, port/game/rac1-ntsc/host/rac1_version.h:179-181)
+    // and hero_queue_sequence (PAL func_L00_00232E60; NTSC FUN_L00_002325e0, the NTSC decomp's
+    // src/overlays/l11/hero/hero_set_state.c:58).
+    const char* set_hero_animation;
+    const char* hero_queue_sequence;
 };
 
 inline Disc disc_for(bool ntsc) {
     if (ntsc) {
-        return {0x0013F350u, 0x0013C940u, 0x0015ED6Cu, 0x0017A680u};
+        return {0x0013F350u, 0x0013C940u, 0x0015ED6Cu, 0x0017A680u, 0x001DA6D0u,
+                "FUN_L00_002323b8", "FUN_L00_002325e0"};
     }
-    return {0x0013F450u, 0x0013CA40u, 0x0015EE6Cu, 0x0017A780u};
+    return {0x0013F450u, 0x0013CA40u, 0x0015EE6Cu, 0x0017A780u, 0x001DA9D0u,
+            "func_L00_00232C10", "func_L00_00232E60"};
 }
 
 }  // namespace thruster_charge
