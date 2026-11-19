@@ -16,10 +16,11 @@ double tap charges instead of hovering. With the Heli-Pack or no pack, R1 does w
 The Thruster-Pack's long jump and its boost in a double jump stay. The setting **Speed** scales the
 charge.
 
-**Needs OpenRAC with the `rac1.player.update_movement` hook point** (branch `rac1-steer-hook`, not
-in a release yet), and mod interface 1.22 or later. A game without the hook point refuses the mod
-with the reason. It is built against the SDK's source at a commit of OpenRAC's `develop`
-(`sdk.lock`); the hook point is declared in `src/movement_hook.hpp` until the SDK has it.
+**Needs OpenRAC with the hook points `rac1.player.update_movement`, `rac1.fx.world_quad.draw`,
+`rac1.fx.thruster_flame.draw` and `rac1.fx.burst.spawn`** (branch `rac1-steer-hook`, not in a
+release yet), and mod interface 1.22 or later. A game without one refuses the mod with the reason.
+It is built against the SDK's source at a commit of OpenRAC's `develop` (`sdk.lock`); the hook
+points are declared in `src/branch_hooks.hpp` until the SDK has them.
 
 ## How it works
 
@@ -55,12 +56,16 @@ The mod's own parts: the hooks (`rac1.player.update` around the hero's update,
 `rac1.player.enter_move_state` to keep the hover the charge's: the Thruster-Pack's own double
 tap is refused), and the speed setting.
 
-The blue flames: the Thruster-Pack's flames are drawn by the game's `draw_joint_aligned_beam_effect`
-as two textured quads, a glow and a ribbon. Only the ribbon's colours are data (a table nothing
-else draws with), so the mod tints that table blue while he charges and puts it back after. The
-quads' texture, the red glow and the orange sparks are constants in the game's code: they stay
-as they are, which needs a hook point on `draw_joint_aligned_beam_effect` and
-`emit_beam_trail_particles` to change.
+The blue flames: the game draws each Thruster-Pack flame (`draw_joint_aligned_beam_effect`) as
+two textured quads, a red glow and a ribbon, and its update throws orange sparks. While he
+charges, the mod turns a tint on around the flame's update (`rac1.moby.moby167.update`) and its
+draw (`rac1.fx.thruster_flame.draw`): every effect quad drawn meanwhile (`rac1.fx.world_quad.draw`)
+is drawn blue and its record put back, every spark spawned (`rac1.fx.burst.spawn`) is blue, and
+the ribbon's colour table is tinted for the charge's length. Every other effect keeps its
+colours, and so do the flames outside a charge. One blue for all of them: each colour's
+brightest channel kept as its brightness, the hue red 0x18 : green 0x50 : blue 0x80 with the
+blue doubled (the PS2's 0x80 is full), so the fire's warm textures still come out bright; each
+part's alpha is kept. The grey smoke stays grey.
 
 Not there yet: Going Commando's flames at his feet, and its own charge and stop sounds (Ratchet &
 Clank has neither).
