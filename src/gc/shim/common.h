@@ -16,8 +16,8 @@
  *    go to variants that take such handles (GC_SHIM_HANDLES, set for it by CMakeLists.txt). The
  *    other files pass real pointers.
  */
-#ifndef CHARGE_BOOTS_GC_SHIM_COMMON_H
-#define CHARGE_BOOTS_GC_SHIM_COMMON_H
+#ifndef THRUSTER_CHARGE_GC_SHIM_COMMON_H
+#define THRUSTER_CHARGE_GC_SHIM_COMMON_H
 
 /* rac2-decomp's types (include/common.h). */
 typedef unsigned char u8;
