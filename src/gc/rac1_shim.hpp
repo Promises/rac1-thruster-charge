@@ -1,0 +1,401 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+//
+// The translation layer: Going Commando's charge code (src/gc/*.c, copied from rac2-decomp) run on
+// Ratchet & Clank's hero.
+//
+// The copied code reads and writes Going Commando's hero at Going Commando's offsets, and calls
+// Going Commando's functions. Here its hero is a copy (gc_shim_hero) that Shim::load fills from
+// Ratchet & Clank's hero by kHeroFields, and Shim::flush writes back, field by field, only what the
+// copied code changed. Its functions are polyfills (rac1_shim.cpp): each one is either Ratchet &
+// Clank's own function for the job, called through a hook point's entry (Hero_ApproachSpeed,
+// Hero_SetPlanarVelocity, Hero_TurnToHeading, Hero_EnterMoveState), or a stand-in built on the mod
+// SDK (collision_line, moby_hit, the hero's sounds), or nothing; its comment says which and what
+// differs from Going Commando.
+//
+// Time: Going Commando counts frames at 60 a second; Ratchet & Clank's tick is g_frame_time long
+// (a 50th on PAL, a 60th on NTSC). k is a tick in Going Commando's frames (frame_time * 60, 1.2 on
+// PAL), and it scales as Ratchet & Clank's own code does with frame_scale: a value per frame (a
+// speed, a turn) is k times as much a tick, an acceleration k * k times, a count of frames 1 / k
+// times as many ticks. The copy holds per-frame values in Going Commando's units (Unit::PerFrame,
+// Unit::Frames); the polyfills scale the rates they are given. Arithmetic the copied code does
+// itself on those units is not rescaled: where it integrates (the bonk's fall), it is off by k.
+//
+// Nothing here includes the SDK: mod.cpp fills Game from it, and the tests from a fake.
+#pragma once
+
+#include <array>
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
+#include <functional>
+
+#include "../charge_boots.hpp"
+
+namespace charge_boots::gc {
+
+// --- Going Commando's states, control modes and animations, and Ratchet & Clank's for them ---
+
+// The charge (Going Commando's state 0x7B, control mode 28, anim 0x8B).
+constexpr std::int32_t kGcCharge = 0x7B;
+constexpr std::int32_t kGcChargeControlMode = 28;
+// The bonk off a wall at the end of a charge (0x77, control mode 10, anim 0x29).
+constexpr std::int32_t kGcBonk = 0x77;
+constexpr std::int32_t kGcBonkControlMode = 10;
+// The stop (3, anim 6).
+constexpr std::int32_t kGcStop = 3;
+
+// A state of Going Commando's and the one of Ratchet & Clank's that stands in for it.
+struct StateMap {
+    std::int32_t gc;
+    std::int32_t rac1;
+};
+
+// The charge runs in the Thruster-Pack's hover (0x81): the same double tap of R1, the same ground
+// spring at +0.17, a lean from his speed; the bonk in the game's own wall bonk (0x7A, anim 0x29,
+// pushed back at 9 units a second as Going Commando's); the stop in the stop (3).
+inline constexpr std::array<StateMap, 3> kStates{{
+    {kGcCharge, kHover},
+    {kGcBonk, kWallBonk},
+    {kGcStop, kStop},
+}};
+
+// Ratchet & Clank's state for Going Commando's, -1 for one the layer does not know.
+inline std::int32_t rac1_state(std::int32_t gc) {
+    for (const StateMap& s : kStates) {
+        if (s.gc == gc) {
+            return s.rac1;
+        }
+    }
+    return -1;
+}
+
+// Going Commando's state for Ratchet & Clank's, as the copied code is to see it: the hover is the
+// charge only while it is one, the wall bonk the charge's bonk only after one; any other state is
+// its own number (the copied code compares it with none but 1 and 29: the look, as in Going
+// Commando, and a state the charge never starts from).
+inline std::int32_t gc_state(std::int32_t rac1, bool charging, bool bonking) {
+    if (charging && rac1 == kHover) {
+        return kGcCharge;
+    }
+    if (bonking && rac1 == kWallBonk) {
+        return kGcBonk;
+    }
+    return rac1;
+}
+
+// Going Commando's control mode for Ratchet & Clank's: the charge's and the bonk's own while he
+// is in them (no control mode of Ratchet & Clank's says "charging"), else the same number (the
+// trigger's gate, idle 0, run 1, fall 2, jump 4, crouch 12, is Ratchet & Clank's hover gate too:
+// hero_gadget_use.c:1068-1071).
+inline std::int32_t gc_control_mode(std::int32_t rac1_mode, std::int32_t gc_state_now) {
+    if (gc_state_now == kGcCharge) {
+        return kGcChargeControlMode;
+    }
+    if (gc_state_now == kGcBonk) {
+        return kGcBonkControlMode;
+    }
+    return rac1_mode;
+}
+
+// An animation of Going Commando's and Ratchet & Clank's in its place; -1: the state's own, which
+// Ratchet & Clank's change of state starts.
+struct AnimationMap {
+    std::int32_t gc;
+    std::int32_t rac1;
+};
+
+inline constexpr std::array<AnimationMap, 3> kAnimations{{
+    {0x8B, 0x13},  // the charge: the hover's
+    {0x29, 0x29},  // the bonk: the same number in both
+    {0x06, -1},    // the stop's skid: the stop state's own
+}};
+
+inline std::int32_t rac1_animation(std::int32_t gc) {
+    for (const AnimationMap& a : kAnimations) {
+        if (a.gc == gc) {
+            return a.rac1;
+        }
+    }
+    return -1;
+}
+
+// Ratchet's hover hum (his class's sound 0x12, which the hover loops in voice slot 4): Going
+// Commando's charge loops its own sound 0xD there, which Ratchet & Clank does not have.
+constexpr std::int32_t kChargeSound = 0x12;
+
+// --- The hero's fields ---
+
+enum class Kind : std::uint8_t { F32, S32, S16, U8 };
+
+inline constexpr std::size_t size_of(Kind k) {
+    return k == Kind::F32 || k == Kind::S32 ? 4 : k == Kind::S16 ? 2 : 1;
+}
+
+enum class Unit : std::uint8_t {
+    // The same in both games: positions, angles, flags.
+    None,
+    // A value per frame (a speed, a turn rate): Ratchet & Clank's per tick is k times it.
+    PerFrame,
+    // A count of frames: Ratchet & Clank counts 1 / k times as many ticks.
+    Frames,
+};
+
+enum class Access : std::uint8_t {
+    // Copied in only: what the copied code writes there stays in the copy.
+    Read,
+    // Copied in, and back out when the copied code changed it.
+    ReadWrite,
+};
+
+struct Field {
+    // Going Commando's offset and type.
+    std::uint32_t gc;
+    Kind gc_kind;
+    // Ratchet & Clank's (include/structs/hero.h).
+    std::uint32_t rac1;
+    Kind rac1_kind;
+    // Elements (a vector's four floats).
+    std::uint8_t count;
+    Unit unit;
+    Access access;
+};
+
+// The copy's size: rac2-decomp's Hero union is 0x980 words, and its ptr[] member is 0x980
+// pointers, 8 bytes each on a 64-bit host.
+constexpr std::size_t kHeroBytes = 0x980 * sizeof(void*);
+// Going Commando's state and control mode, and the hero's moby (translated, not by the table).
+constexpr std::uint32_t kGcMoby = 0x2290;
+constexpr std::uint32_t kGcState = 0x2294;
+constexpr std::uint32_t kGcControlMode = 0x229C;
+// The moby as the copied code's Hero union reads it: ptr[0x2290 / 4], a host pointer.
+constexpr std::uint32_t kGcMobyPointer = kGcMoby / 4 * sizeof(void*);
+// The target speed: the `speed` setting scales what the charge writes there.
+constexpr std::uint32_t kGcTargetSpeed = 0x1B0;
+// The stick, smoothed (pad_clamp_stick_to_unit_range: +4 the y, +8 the x, -1 to 1); kept in
+// the copy only.
+constexpr std::uint32_t kGcStickSmooth = 0x9F0;
+// The stick as read (x, y; Ratchet & Clank's +0x1D20).
+constexpr std::uint32_t kGcStick = 0x1FB0;
+
+// Going Commando's hero field by field, and where Ratchet & Clank keeps the same thing. Matched by
+// what the code does with them in both games: rac2-decomp names them in hero_compute_push_direction
+// (yaw +0x98, speed +0x1B4, pitch +0x324, flag +0x22C3), hero_approach_speed (+0x1B0, +0x1B4),
+// hero_steer_heading (+0x98, +0x1A0..+0x1A8) and ProcessHeroEquippedItemInput (its struct); the
+// rest by the same shift as their neighbours (+0x10 for the motion vectors, +0x20 from +0x190,
+// +0x30/+0x40 from +0x250, +0x210 for the state block) and by use. "Inferred" marks a field matched
+// by the shift and its use only.
+inline constexpr std::array<Field, 28> kHeroFields{{
+    // The matrix: VEC(0) is his forward row (the bonk turns away from it).
+    {0x000, Kind::F32, 0x000, Kind::F32, 16, Unit::None, Access::Read},
+    // motion.pos (the ground spring moves z, +0x88).
+    {0x080, Kind::F32, 0x080, Kind::F32, 4, Unit::None, Access::ReadWrite},
+    // motion.rot (z, +0x98: his facing, which the charge turns).
+    {0x090, Kind::F32, 0x090, Kind::F32, 4, Unit::None, Access::ReadWrite},
+    // motion.body_center: the hit sphere's start (inferred).
+    {0x0E0, Kind::F32, 0x0D0, Kind::F32, 4, Unit::None, Access::Read},
+    // motion.velocity (hero_compute_push_direction writes D_00189F10, the hero + 0xF0).
+    {0x0F0, Kind::F32, 0x0E0, Kind::F32, 4, Unit::PerFrame, Access::ReadWrite},
+    // motion.displacement: how far he moved, after collision.
+    {0x110, Kind::F32, 0x100, Kind::F32, 4, Unit::PerFrame, Access::Read},
+    // motion.resolved_velocity (the bonk's fall reads its z, +0x128).
+    {0x120, Kind::F32, 0x110, Kind::F32, 4, Unit::PerFrame, Access::Read},
+    // motion.move_dir (the bonk on magnetic ground writes it).
+    {0x190, Kind::F32, 0x170, Kind::F32, 4, Unit::None, Access::ReadWrite},
+    // motion.move_yaw, yaw_rate, yaw_error (hero_steer_heading).
+    {0x1A0, Kind::F32, 0x180, Kind::F32, 1, Unit::None, Access::ReadWrite},
+    {0x1A4, Kind::F32, 0x184, Kind::F32, 1, Unit::PerFrame, Access::ReadWrite},
+    {0x1A8, Kind::F32, 0x188, Kind::F32, 1, Unit::None, Access::ReadWrite},
+    // target_speed and ground_speed (hero_approach_speed).
+    {0x1B0, Kind::F32, 0x190, Kind::F32, 1, Unit::PerFrame, Access::ReadWrite},
+    {0x1B4, Kind::F32, 0x194, Kind::F32, 1, Unit::PerFrame, Access::ReadWrite},
+    // state_timer: frames in the state (the burst's 60, the stop's 61; ProcessHeroEquippedItemInput's
+    // `frame`).
+    {0x1B8, Kind::S32, 0x198, Kind::S32, 1, Unit::Frames, Access::Read},
+    // move_lock_timer: the stop's 30 frames before he moves again (inferred).
+    {0x1E0, Kind::S16, 0x1C4, Kind::S32, 1, Unit::Frames, Access::ReadWrite},
+    // capsule_radius: where the reach probe starts (hero_test_reach_blend's D_0018A084, the hero +
+    // 0x264; inferred).
+    {0x264, Kind::F32, 0x234, Kind::F32, 1, Unit::None, Access::Read},
+    // wall_hit: the wall probe found a wall in his way.
+    {0x287, Kind::U8, 0x257, Kind::U8, 1, Unit::None, Access::Read},
+    // ground_point (the spring on magnetic ground; inferred).
+    {0x2D0, Kind::F32, 0x2A0, Kind::F32, 4, Unit::None, Access::Read},
+    // ground_z and ground_distance (the spring's goal; the bonk's "in the air").
+    {0x318, Kind::F32, 0x2D8, Kind::F32, 1, Unit::None, Access::Read},
+    {0x31C, Kind::F32, 0x2DC, Kind::F32, 1, Unit::None, Access::Read},
+    // grounded_frames (ProcessHeroEquippedItemInput's `action_ready`: landed).
+    {0x340, Kind::S32, 0x300, Kind::S32, 1, Unit::None, Access::Read},
+    // unk308: the Magneboots hold him (the charge stops; inferred).
+    {0x348, Kind::S16, 0x308, Kind::S16, 1, Unit::None, Access::Read},
+    // ground_spring_velocity (the ground spring's).
+    {0xA00, Kind::F32, 0x304, Kind::F32, 1, Unit::PerFrame, Access::ReadWrite},
+    // stick_x, stick_y.
+    {kGcStick, Kind::F32, 0x1D20, Kind::F32, 2, Unit::None, Access::Read},
+    // vehicle_mode.
+    {0x22B4, Kind::U8, 0x20A4, Kind::U8, 1, Unit::None, Access::Read},
+    // item_anim_active (ProcessHeroEquippedItemInput's `changing_weapon`: the charge stops).
+    {0x22B8, Kind::U8, 0x20A8, Kind::U8, 1, Unit::None, Access::Read},
+    // gravity_mode (hero_compute_push_direction's flag).
+    {0x22C3, Kind::U8, 0x20B3, Kind::U8, 1, Unit::None, Access::Read},
+    // stick_magnitude.
+    {0x24B8, Kind::F32, 0x229C, Kind::F32, 1, Unit::None, Access::Read},
+}};
+
+// Going Commando's body-tilt records (D_L20_00267210, and the cam_set_limits_* table of rac2-decomp,
+// whose 0xB0-byte rows hold their spring at +0xA4, +0xA8) are Ratchet & Clank's hero_eases, same
+// layout (HeroEase: rot_target at +0x60, accel +0xA4, max_speed +0xA8): four of them.
+constexpr std::size_t kLeanRecord = 0xB0;
+constexpr std::size_t kLeanBytes = 4 * kLeanRecord;
+constexpr std::size_t kPadBytes = 0x200;
+
+// --- The game, as the translation layer reaches it ---
+
+// Game memory: game address a is base + a.
+struct Memory {
+    std::uint8_t* base = nullptr;
+
+    template <class T>
+    T read(std::uint32_t address) const {
+        T value;
+        std::memcpy(&value, base + address, sizeof value);
+        return value;
+    }
+
+    template <class T>
+    void write(std::uint32_t address, const T& value) const {
+        std::memcpy(base + address, &value, sizeof value);
+    }
+};
+
+// A hit, as the SDK's moby_hit takes it.
+struct Hit {
+    std::int32_t victim;
+    std::int32_t attacker;
+    std::uint32_t mask;
+    float damage;
+    float position[3];
+    float velocity[3];
+};
+
+// What the polyfills call in the game. mod.cpp fills it from the SDK; a test from a fake.
+struct Game {
+    Memory memory;
+    // g_hero, the pad's state, and the tilt records in the level loaded now (0: none).
+    std::uint32_t hero = 0;
+    std::uint32_t pad = 0;
+    std::uint32_t lean = 0;
+    // Ratchet & Clank's speed_step (Hero_ApproachSpeed): ground speed toward target speed.
+    std::function<void(float up, float down)> approach_speed;
+    // set_planar_vel (Hero_SetPlanarVelocity): velocity at his ground speed; above pi his facing.
+    std::function<void(float angle)> set_planar_velocity;
+    // turn_to (Hero_TurnToHeading): facing toward move yaw.
+    std::function<void(std::int32_t mode, float accel, float damping, float limit)> turn_to_heading;
+    // HeroEnterMoveState (Hero_EnterMoveState), as the mod's own call.
+    std::function<std::int32_t(std::int32_t state, std::int32_t force)> enter_move_state;
+    // The moby slot the line from..to meets first (not the hero), -1 for none.
+    std::function<std::int32_t(const float* from, const float* to)> moby_on_line;
+    // Whether the line from..to meets the level.
+    std::function<bool(const float* from, const float* to)> level_on_line;
+    std::function<void(const Hit&)> hit;
+    // The hero's moby slot.
+    std::function<std::int32_t()> self_slot;
+    // One of the hero's own sounds (looped): its voice, -1 for none; and its stop.
+    std::function<std::int32_t(std::int32_t sound, bool loop)> sound_play;
+    std::function<void(std::int32_t voice)> sound_stop;
+    std::function<void(const char*)> log;
+};
+
+class Shim {
+public:
+    Game game;
+
+    // Each tick, before the copied code runs: the tick's length in seconds.
+    void set_tick(float frame_time);
+    // A tick in Going Commando's frames.
+    float k() const { return m_k; }
+
+    // The player's settings and the boots' ownership.
+    void set_speed_scale(float scale);
+    void set_owned(bool owned) { m_owned = owned; }
+
+    // Going Commando's hero from Ratchet & Clank's (and the pad, the tilt records, the globals).
+    void load();
+    // What the copied code changed, back to Ratchet & Clank's hero.
+    void flush();
+
+    // The game's state each tick: a charge he was taken out of (hurt, a cutscene) is over.
+    void observe();
+    bool charging() const { return m_charging; }
+    bool bonking() const { return m_bonking; }
+    // Whether the copied state machine moves him this tick, in place of Ratchet & Clank's.
+    bool drives_movement() const;
+    // After his update: the charge's sound stopped when nothing kept it this tick.
+    void end_tick();
+    // A game loaded or a level left: no charge.
+    void reset();
+
+    // --- For the polyfills ---
+
+    // Ratchet & Clank's change of state for Going Commando's (gc_shim_enter_state).
+    std::int32_t enter_state(std::int32_t gc_action);
+    // An address the copied code passed as a 32-bit handle, in the layer's buffers; nullptr when it
+    // is none of them.
+    void* resolve(std::int32_t handle) const;
+    // Whether no two of those buffers share their low 32 bits (else handles would be ambiguous).
+    bool handles_unambiguous() const;
+    // A call into the game: the copy flushed before it and loaded after.
+    template <class F>
+    void call_game(F&& f) {
+        flush();
+        f();
+        load();
+    }
+    // The charge's looping sound, kept this tick.
+    void keep_sound();
+    // Going Commando's frame timer decremented by a tick (math_fast_float_d).
+    std::int32_t step_frame_timer(std::int32_t* timer);
+    // Whether the hero's items' input runs (ProcessHeroEquippedItemInput's early returns).
+    bool item_input_allowed() const;
+    // Once for each polyfill reached that should not be.
+    void unreachable(const char* what);
+    HitCooldown& hits() { return m_hits; }
+    float clock() const { return m_clock; }
+
+private:
+    void end_charge();
+    std::int32_t rac1_state_now() const;
+
+    float m_k = 1.0f;
+    float m_clock = 0.0f;
+    float m_speed_scale = 1.0f;
+    bool m_owned = false;
+    bool m_charging = false;
+    bool m_bonking = false;
+    bool m_loaded = false;
+    bool m_sound_kept = false;
+    std::int32_t m_voice = -1;
+    float m_timer_carry = 0.0f;
+    HitCooldown m_hits;
+    std::uint32_t m_unreachable_logged = 0;
+};
+
+Shim& shim();
+
+}  // namespace charge_boots::gc
+
+// The copied functions, and the layer's buffers they work on (src/gc/*.c, gc/shim/common.h).
+extern "C" {
+void hero_l00_update_state_machine(void);
+std::int32_t hero_l00_set_action(std::int32_t action, std::int32_t animate);
+void hero_l00_decide_state(void);
+int ProcessHeroEquippedItemInput(void);
+
+extern unsigned char gc_shim_hero[];
+extern unsigned char gc_shim_lean[];
+extern unsigned char gc_shim_pad[];
+extern std::int32_t gc_shim_gravity_flag;
+extern std::int32_t gc_shim_hits[];
+extern unsigned char gc_shim_items_owned[];
+extern std::uint32_t gc_shim_item_slots[];
+extern std::int32_t gc_shim_double_tap_timer;
+}

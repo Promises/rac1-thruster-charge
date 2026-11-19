@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-3.0-or-later
 //
 // Where Ratchet & Clank keeps what this mod reads and writes, on both discs. The hero's field
 // offsets are the same on PAL and NTSC; the bases differ (NTSC is not a flat 0x100 below PAL:
@@ -37,6 +37,8 @@ constexpr std::uint32_t kGroundedFrames = 0x300u;
 constexpr std::uint32_t kMagnetFlag = 0x308u;
 // Hero.stick_x: the stick across, -1 left to 1 right (the d-pad when the stick is idle).
 constexpr std::uint32_t kStickX = 0x1D20u;
+// Hero.moby: the hero's moby (a game address).
+constexpr std::uint32_t kMoby = 0x2080u;
 // Hero.state.current and Hero.state.control_mode.
 constexpr std::uint32_t kHeroState = 0x2084u;
 constexpr std::uint32_t kControlMode = 0x208Cu;
@@ -94,13 +96,18 @@ struct Disc {
     std::uint32_t items_owned;
     // g_frame_time: seconds a tick (1/60 at 60 ticks a second).
     std::uint32_t frame_time;
+    // The hero's body-tilt records (hero_eases: 0xB0-byte HeroEase rows that ease his joints toward
+    // their rot_target, +0x60; Hero_SetTiltSpringParams sets their spring, +0xA4 and +0xA8). Level
+    // 0's address (PAL D_L00_0017A780, NTSC D_L00_0017A680, the NTSC decomp's hero_eases): every
+    // level has its own copy, which relocate_level(0, ...) finds.
+    std::uint32_t lean_l00;
 };
 
 inline Disc disc_for(bool ntsc) {
     if (ntsc) {
-        return {0x0013F350u, 0x0013C940u, 0x0013D4C0u, 0x0015ED6Cu};
+        return {0x0013F350u, 0x0013C940u, 0x0013D4C0u, 0x0015ED6Cu, 0x0017A680u};
     }
-    return {0x0013F450u, 0x0013CA40u, 0x0013D5C8u, 0x0015EE6Cu};
+    return {0x0013F450u, 0x0013CA40u, 0x0013D5C8u, 0x0015EE6Cu, 0x0017A780u};
 }
 
 }  // namespace charge_boots

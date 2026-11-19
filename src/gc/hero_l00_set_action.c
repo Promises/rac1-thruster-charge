@@ -4,7 +4,7 @@
  * (https://github.com/OpenRAC/rac2-decomp, GNU GPL version 3) at commit
  * 005bfc4dd3b0d715dcbffabdb8835e356e34474a, file src/levels/00_aranos_tutorial/L00_002C42E0-state-g8.c,
  * lines 1-147 (the file's head), 149-150, 167-168 (locals), 202 (the switch),
- * 382-387 (case 0x7B) and 1012-1017 (case 0x77). Code of that project from before its relicensing (d46a3539, 2026-10-11) is also
+ * 382-388 (case 0x7B) and 1012-1017 (case 0x77). Code of that project from before its relicensing (d46a3539, 2026-10-11) is also
  * under its MIT notice: THIRD_PARTY_NOTICES.md.
  *
  * hero_l00_set_action, the hero's change of state: what entering the charge (0x7B) and the bonk
@@ -183,6 +183,7 @@ s32 hero_l00_set_action(s32 action, s32 animate) {
         COPY_VECTOR(0xF0, 0x110);
         if (WORD(0x1298) != 0x36) { WORD(0x2304) = WORD(0x1298); WORD(0x22CC) = 0x36; }
         if (!animate) goto finish;
+        set_hero_animation(0x8B, 0, n); goto finish; }
     case 0x77:
         WORD(0x229C) = 10; BITS(0x24A0) = 0;
         REAL(0xBF0) = FastAddRotations(REAL(0x98), 3.14159297943f);
