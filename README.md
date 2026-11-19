@@ -1,5 +1,9 @@
 # Thruster Charge
 
+![Ratchet charging down a tunnel on Clank's Thruster-Pack, its flames blue](docs/thruster-charge.png)
+
+[Watch the 20-second clip (WebM)](docs/thruster-charge.webm)
+
 A native mod for [OpenRAC](https://github.com/OpenRAC/OpenRAC)'s port of Ratchet & Clank: Going
 Commando's **Charge Boots** charge on Clank's **Thruster-Pack**, running **Going Commando's own
 charge code**. With the Thruster-Pack on, double-tap R1 on the ground and hold it: Ratchet charges
@@ -30,11 +34,11 @@ shakes at every jump back to its first frame, whatever the range; a single held 
 stiff. Back and forth between 3 and 5 at 0.75 is the pick. The game's log says how many frames the long
 jump's animation has, once a level.
 
-**Needs OpenRAC with the hook points `rac1.player.update_movement`, `rac1.fx.world_quad.draw`,
-`rac1.fx.thruster_flame.draw` and `rac1.fx.burst.spawn`** (branch `rac1-steer-hook`, not in a
-release yet), and mod interface 1.22 or later. A game without one refuses the mod with the reason.
-It is built against the SDK's source at a commit of OpenRAC's `develop` (`sdk.lock`); the hook
-points are declared in `src/branch_hooks.hpp` until the SDK has them.
+**Needs OpenRAC with the hook points from OpenRAC PR OPENRAC_PR_URL** (`rac1.player.update_movement`,
+`rac1.fx.world_quad.draw`, `rac1.fx.thruster_flame.draw` and `rac1.fx.burst.spawn`), and mod
+interface 1.22 or later. Until a game has them, it refuses the mod and says why. The mod is built
+against the SDK's source at a commit of OpenRAC's `develop` (`sdk.lock`); the hook points are
+declared in `src/branch_hooks.hpp` until the SDK has them.
 
 ## How it works
 

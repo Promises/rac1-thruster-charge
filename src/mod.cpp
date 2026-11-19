@@ -317,4 +317,4 @@ void load(openrac::Mod& mod) {
 
 }  // namespace
 
-OPENRAC_MOD_CPP("thruster-charge", "0.6.4", load)
+OPENRAC_MOD_CPP("thruster-charge", "1.0.0", load)
