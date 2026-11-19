@@ -28,7 +28,7 @@
 //   rac1.fx.world_quad.draw              each effect quad: the flame's drawn in blue
 //   rac1.fx.burst.spawn                  each spark: the flame's spawned in blue
 // and the translation layer tints its ribbon's colour table.
-// The movement hook point and the three fx ones are new in OpenRAC (branch rac1-steer-hook),
+// The movement hook point and the three fx ones are new in OpenRAC (PR #617, branch rac1-steer-hook),
 // declared in branch_hooks.hpp until the SDK has them; a game without one refuses the mod with
 // the reason.
 //

@@ -5,7 +5,7 @@
 // UpdateMovement, DrawWorldQuad, DrawThrusterFlame, SpawnBurst). Also add their ids to
 // openrac-mod.json's "hooks" then: package_mod.py refuses an id its SDK's table lacks.
 //
-// The hook points, declared in the same shape as the SDK's generated ones (OpenRAC branch
+// The hook points, declared in the same shape as the SDK's generated ones (OpenRAC PR #617, branch
 // rac1-steer-hook, commits 58eb1fb1b and eb8da1602, sdk/bindings/rac1.json): the port finds each
 // by its id; one without it refuses the mod at load with the reason.
 #pragma once
