@@ -152,9 +152,9 @@ constexpr std::int32_t kChargePoseTo = 5;
 
 enum class PoseMotion { PingPong, Loop, Hold };
 
-// The back and forth's speed (the setting pose_rate): times the frame's own rate, 0.9 by default
-// (the player's pick on the box: 10% slower than the animation).
-constexpr float kPoseSpeedDefault = 0.9f;
+// The back and forth's speed (the setting pose_rate): times the frame's own rate, 0.75 by default
+// (the player's pick, tuned on the box).
+constexpr float kPoseSpeedDefault = 0.75f;
 constexpr float kPoseSpeedMin = 0.2f;
 constexpr float kPoseSpeedMax = 2.0f;
 

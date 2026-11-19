@@ -12,7 +12,7 @@ Ratchet & Clank has no Charge Boots (no model, no animation), so the charge runs
 have: the Thruster-Pack. It runs in the hover's state (the same double tap of R1, the same float a
 little over the ground) with the hover's hum, in the pose of the Thruster-Pack's long jump (R1 or
 R2 and X) without its take-off, landing and sounds: its 14-frame animation starts at frame 3 and
-goes back and forth between frames 3 and 5 (3, 4, 5, 4, 3...) for as long as he charges, at 0.9
+goes back and forth between frames 3 and 5 (3, 4, 5, 4, 3...) for as long as he charges, at 0.75
 of the animation's own rate, with no jump back. The game cannot play an animation backwards, so the mod
 holds the game's advance and sets the frame itself each tick, between two frames as the game
 draws them. The Thruster-Pack's flames turn blue while he
@@ -23,7 +23,11 @@ Thruster-Pack's long jump and its boost in a double jump stay.
 Settings: **Speed** scales the charge; **Pose: from frame** and **Pose: to frame** (3 and 5) set
 the range, the same frame twice holds it still; **Pose: motion** is back and forth (the default),
 the game's loop (it jumps back to the first frame, which shakes), or held still; **Pose: speed**
-(0.9) is how fast it goes back and forth, times the animation's own rate. The game's log says how many frames the long
+(0.75) is how fast it goes back and forth, times the animation's own rate.
+
+Tuning notes, from the box (PAL): frames 6 and later are the long jump's landing; the game's loop
+shakes at every jump back to its first frame, whatever the range; a single held frame looks
+stiff. Back and forth between 3 and 5 at 0.75 is the pick. The game's log says how many frames the long
 jump's animation has, once a level.
 
 **Needs OpenRAC with the hook points `rac1.player.update_movement`, `rac1.fx.world_quad.draw`,

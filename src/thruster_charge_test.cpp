@@ -832,16 +832,16 @@ void the_pose_speed_scales_the_back_and_forth() {
     m.write(kFakeMoby + gc::kMobyNextSequence, static_cast<std::uint8_t>(gc::kChargePose));
     tick(f);
     tick(f);
-    check(near(shown(f), 3.0f + 0.5f * 0.9f), "the default: 0.9 of the frame's rate a tick");
+    check(near(shown(f), 3.0f + 0.5f * 0.75f), "the default: 0.75 of the frame's rate a tick");
     gc::shim().set_pose_speed(2.0f);
     tick(f);
-    check(near(shown(f), 3.45f + 1.0f), "changed while he charges: twice it, from the next tick");
+    check(near(shown(f), 3.375f + 1.0f), "changed while he charges: twice it, from the next tick");
     gc::shim().set_pose_speed(50.0f);
     tick(f);
-    check(near(shown(f), 4.55f), "at most twice: a frame on, past 5 and back by what is left");
+    check(near(shown(f), 4.625f), "at most twice: a frame on, past 5 and back by what is left");
     gc::shim().set_pose_speed(NAN);
     tick(f);
-    check(near(shown(f), 4.1f), "not a number: the default, still going back");
+    check(near(shown(f), 4.25f), "not a number: the default, still going back");
 }
 
 }  // namespace
