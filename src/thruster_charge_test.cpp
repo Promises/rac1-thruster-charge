@@ -54,6 +54,8 @@ constexpr std::uint32_t kFakeMoby = 0x1A0000;
 constexpr std::uint32_t kFakeClass = 0x1A1000;
 constexpr std::uint32_t kFakeLongJump = 0x1A2000;
 constexpr std::uint32_t kFakeHover = 0x1A2100;
+constexpr std::uint32_t kFakeFrameData = 0x1A3000;
+constexpr float kFakeFrameRate = 0.5f;
 
 struct Fake {
     std::vector<std::uint8_t> memory = std::vector<std::uint8_t>(0x200000);
@@ -177,6 +179,10 @@ Fake& fresh(float frame_time = kNtsc) {
     fake.mem().write(kFakeLongJump + gc::kSequenceFrameCount, std::uint8_t{14});
     fake.mem().write(kFakeLongJump + gc::kSequenceSound, std::uint8_t{0x55});
     fake.mem().write(kFakeHover + gc::kSequenceSound, std::uint8_t{0x33});
+    for (std::uint32_t i = 0; i < 14; ++i) {
+        fake.mem().write(kFakeLongJump + gc::kSequenceFrames + i * 4, kFakeFrameData + i * 0x40);
+        fake.mem().write(kFakeFrameData + i * 0x40, kFakeFrameRate);
+    }
     fake.set(gc::kHeroAnimSpeed, 1.0f);
     // The Thruster-Pack on his back.
     fake.set(kPackSlotState, kSlotReady);
@@ -619,35 +625,119 @@ void a_wall_bonks_him_back() {
 }
 
 void pose_frames_are_clamped() {
-    check(gc::pose_frames(4, 9, 14) == std::make_pair(4, 9), "the default loop");
+    check(gc::pose_frames(3, 5, 14) == std::make_pair(3, 5), "the default range");
     check(gc::pose_frames(12, 24, 14) == std::make_pair(12, 13), "past the end: to its last frame");
     check(gc::pose_frames(40, 50, 14) == std::make_pair(13, 13), "both past it: its last, held");
     check(gc::pose_frames(9, 4, 14) == std::make_pair(9, 9), "backwards: held at the first");
     check(gc::pose_frames(-3, 5, 0) == std::make_pair(0, 5), "frames unknown: as asked, from 0");
 }
 
-void the_charge_loops_the_long_jumps_flight() {
-    Fake& f = fresh();
-    start_charge(f);
-    check(f.animations.size() == 1 && f.animations[0].id == gc::kChargePose && f.animations[0].start == 4 &&
-              f.animations[0].frames == -2.0f,
-          "the long jump's animation from the loop's first frame, on Going Commando's blend curve");
-    check(f.loops.size() == 1 && f.loops[0].first == 4 && f.loops[0].second == 9, "its flight looped, 4..9");
-    check(f.infos.size() == 1 && f.infos[0].find("has 14 frames") != std::string::npos, "its frames logged");
-    const gc::Memory m = f.mem();
-    check(m.read<std::uint8_t>(kFakeMoby + gc::kMobySound) == 0x33, "the hover's looping sound, not the long jump's");
-    check(f.get<float>(gc::kHeroAnimSpeed) == 1.0f, "playing, not held");
-    m.write(kFakeMoby + gc::kMobyTriggers, std::uint8_t{4});
-    for (int i = 0; i < 600; ++i) {
-        tick(f);
+void the_pingpong_is_a_triangle_wave() {
+    gc::PingPong p;
+    p.start(3.0f, 5.0f);
+    const float expect[] = {3.5f, 4.0f, 4.5f, 5.0f, 4.5f, 4.0f, 3.5f, 3.0f, 3.5f, 4.0f};
+    bool ok = true;
+    float last = p.at();
+    for (const float e : expect) {
+        const float at = p.step(0.5f);
+        ok = ok && near(at, e) && std::fabs(at - last) <= 0.5f + 1e-5f && at >= 3.0f && at <= 5.0f;
+        last = at;
     }
-    check(gc::shim().charging(), "ten seconds held: still charging");
-    check(f.animations.size() == 1 && f.loops.size() == 1, "and never started again: the loop stays");
-    check(m.read<std::uint8_t>(kFakeMoby + gc::kMobyTriggers) == 0, "no long jump sounds at its frames");
-    check(f.sounds.size() == 1 && f.sounds[0].first == gc::kChargeSound && f.stops == 0, "one hum, for all of it");
+    check(ok, "3, 3.5 .. 5, then back down to 3 and up again, never more than a step at a time");
+    p.start(3.0f, 5.0f);
+    p.step(1.5f);
+    p.step(1.5f);
+    check(near(p.at(), 4.0f) && !p.forward(), "a step past the end turns back by what is left");
+    p.start(3.0f, 5.0f);
+    p.step(8.5f);
+    check(near(p.at(), 3.5f) && p.forward(), "whole ways there and back change nothing");
+    p.start(4.0f, 4.0f);
+    p.step(0.5f);
+    check(p.at() == 4.0f, "one frame: still");
+
+    check(gc::frame_pair(3.5f, 5).a == 3 && gc::frame_pair(3.5f, 5).b == 4 && near(gc::frame_pair(3.5f, 5).t, 0.5f),
+          "between frames: the two and how far");
+    check(gc::frame_pair(5.0f, 5).a == 5 && gc::frame_pair(5.0f, 5).b == 5 && gc::frame_pair(5.0f, 5).t == 0.0f,
+          "the last frame: itself");
+    check(gc::frame_pair(3.99f, 5).a == 4 && gc::frame_pair(3.99f, 5).t == 0.0f, "almost the next: the next");
+    check(gc::frame_pair(4.995f, 5).a == 5 && gc::frame_pair(4.995f, 5).b == 5, "almost the last: the last");
+    check(gc::pose_rate(0.5f) == 0.5f && gc::pose_rate(NAN) == 0.5f && gc::pose_rate(0.0f) == 0.5f &&
+              gc::pose_rate(5.0f) == 0.5f,
+          "the frame's own rate, or half a frame a tick");
+    check(gc::pose_motion_named("loop") == gc::PoseMotion::Loop && gc::pose_motion_named("hold") == gc::PoseMotion::Hold &&
+              gc::pose_motion_named("pingpong") == gc::PoseMotion::PingPong &&
+              gc::pose_motion_named(nullptr) == gc::PoseMotion::PingPong,
+          "pose_motion");
+}
+
+// The moby's shown frame (gc::frame_pair's three, as written).
+float shown(Fake& f) {
+    const gc::Memory m = f.mem();
+    return static_cast<float>(m.read<std::uint8_t>(kFakeMoby + gc::kMobyFrame)) + m.read<float>(kFakeMoby + gc::kMobyAnimTime);
+}
+
+void the_charge_plays_the_long_jumps_flight_back_and_forth() {
+    for (const float frame_time : {kNtsc, kPal}) {
+        Fake& f = fresh(frame_time);
+        start_charge(f);
+        check(f.animations.size() == 1 && f.animations[0].id == gc::kChargePose && f.animations[0].start == 3 &&
+                  f.animations[0].frames == -2.0f,
+              "the long jump's animation from frame 3, on Going Commando's blend curve");
+        check(f.loops.empty(), "not the game's loop");
+        check(f.infos.size() == 1 && f.infos[0].find("has 14 frames") != std::string::npos &&
+                  f.infos[0].find("3..5 (back and forth)") != std::string::npos,
+              "its frames logged");
+        const gc::Memory m = f.mem();
+        check(m.read<std::uint8_t>(kFakeMoby + gc::kMobySound) == 0x33, "the hover's looping sound, not the long jump's");
+        check(f.get<float>(gc::kHeroAnimSpeed) == 0.0f, "the game's advance held");
+        // The blend into it done: the moby on the long jump's frame 3.
+        m.write(kFakeMoby + gc::kMobySequence, static_cast<std::uint8_t>(gc::kChargePose));
+        m.write(kFakeMoby + gc::kMobyNextSequence, static_cast<std::uint8_t>(gc::kChargePose));
+        m.write(kFakeMoby + gc::kMobyTriggers, std::uint8_t{4});
+        std::vector<float> at;
+        for (int i = 0; i < 12; ++i) {
+            tick(f);
+            at.push_back(shown(f));
+        }
+        const float expect[] = {3.0f, 3.5f, 4.0f, 4.5f, 5.0f, 4.5f, 4.0f, 3.5f, 3.0f, 3.5f, 4.0f, 4.5f};
+        bool ok = true;
+        for (std::size_t i = 0; i < at.size(); ++i) {
+            ok = ok && near(at[i], expect[i]);
+        }
+        check(ok, "3 to 5 and back, half a frame a tick (the frame's own rate, on PAL as the game plays it)");
+        check(m.read<std::uint32_t>(kFakeMoby + gc::kMobyFrameData) == kFakeFrameData + 4 * 0x40 &&
+                  m.read<std::uint32_t>(kFakeMoby + gc::kMobyNextFrameData) == kFakeFrameData + 5 * 0x40,
+              "the two frames' data with them");
+        for (int i = 0; i < 600; ++i) {
+            tick(f);
+        }
+        check(gc::shim().charging() && shown(f) >= 3.0f && shown(f) <= 5.0f, "ten seconds held: still between 3 and 5");
+        check(f.animations.size() == 1, "never started again");
+        check(m.read<std::uint8_t>(kFakeMoby + gc::kMobyTriggers) == 0, "no long jump sounds at its frames");
+        check(f.sounds.size() == 1 && f.sounds[0].first == gc::kChargeSound && f.stops == 0, "one hum, for all of it");
+        f.pad(false, false);
+        tick(f);
+        check(!gc::shim().charging() && f.stops == 1 && f.get<float>(gc::kHeroAnimSpeed) == 1.0f,
+              "let go: stopped, the hum with it, the advance free again");
+    }
+
+    Fake& f = fresh();
+    gc::shim().set_pose(4, 9, gc::PoseMotion::Loop);
+    start_charge(f);
+    check(f.loops.size() == 1 && f.loops[0].first == 4 && f.loops[0].second == 9 &&
+              f.get<float>(gc::kHeroAnimSpeed) == 1.0f,
+          "loop: the game's");
+
+    f = fresh();
+    gc::shim().set_pose(3, 5, gc::PoseMotion::Hold);
+    start_charge(f);
+    check(f.loops.empty() && f.animations[0].start == 3 && f.get<float>(gc::kHeroAnimSpeed) == 0.0f, "hold: frame 3 still");
+
+    f = fresh();
+    start_charge(f);
     f.pad(false, false);
+    f.set(kStateTimer, 70);
     tick(f);
-    check(!gc::shim().charging() && f.stops == 1, "let go: stopped, the hum with it");
     f.set(kMoveLockTimer, 0);
     f.set(kHeroState, kIdle);
     start_charge(f);
@@ -665,7 +755,7 @@ void the_charge_loops_the_long_jumps_flight() {
     check(!gc::shim().charging() && f.get<float>(gc::kHeroAnimSpeed) == 1.0f, "let go after it");
 
     f = fresh();
-    gc::shim().set_pose(12, 24);
+    gc::shim().set_pose(12, 24, gc::PoseMotion::Loop);
     start_charge(f);
     check(f.animations.size() == 1 && f.animations[0].start == 12 && f.loops.size() == 1 && f.loops[0].second == 13,
           "past its 14 frames: to its last, so the game takes the loop");
@@ -753,7 +843,8 @@ int main() {
     other_ends_of_a_charge();
     a_wall_bonks_him_back();
     pose_frames_are_clamped();
-    the_charge_loops_the_long_jumps_flight();
+    the_pingpong_is_a_triangle_wave();
+    the_charge_plays_the_long_jumps_flight_back_and_forth();
     one_blue_for_every_part_of_the_flame();
     the_tint_is_only_the_flames_in_a_charge();
     the_ribbon_is_blue_in_a_charge();

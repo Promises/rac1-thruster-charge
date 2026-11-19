@@ -11,14 +11,18 @@ After a charge, Going Commando's lockout (half a second) passes before the next 
 Ratchet & Clank has no Charge Boots (no model, no animation), so the charge runs in what it does
 have: the Thruster-Pack. It runs in the hover's state (the same double tap of R1, the same float a
 little over the ground) with the hover's hum, in the pose of the Thruster-Pack's long jump (R1 or
-R2 and X) without its take-off, landing and sounds: its 14-frame animation starts at frame 4 and
-loops frames 4 to 9 for as long as he charges. The Thruster-Pack's flames turn blue while he
+R2 and X) without its take-off, landing and sounds: its 14-frame animation starts at frame 3 and
+goes back and forth between frames 3 and 5 (3, 4, 5, 4, 3...) for as long as he charges, at the
+animation's own rate, with no jump back. The game cannot play an animation backwards, so the mod
+holds the game's advance and sets the frame itself each tick, between two frames as the game
+draws them. The Thruster-Pack's flames turn blue while he
 charges. The charge is his whenever the Thruster-Pack is on his back: its double tap charges
 instead of hovering. With the Heli-Pack or no pack, R1 does what the game does. The
 Thruster-Pack's long jump and its boost in a double jump stay.
 
-Settings: **Speed** scales the charge; **Pose: loop from frame** and **Pose: loop to frame** (4 and
-9) set the loop, the same frame twice holds it still. The game's log says how many frames the long
+Settings: **Speed** scales the charge; **Pose: from frame** and **Pose: to frame** (3 and 5) set
+the range, the same frame twice holds it still; **Pose: motion** is back and forth (the default),
+the game's loop (it jumps back to the first frame, which shakes), or held still. The game's log says how many frames the long
 jump's animation has, once a level.
 
 **Needs OpenRAC with the hook points `rac1.player.update_movement`, `rac1.fx.world_quad.draw`,
@@ -55,7 +59,7 @@ that code on Ratchet & Clank's hero:
   collision lines and `moby_hit` for the hits; the hover's hum for the charge's sound; Ratchet's
   body-tilt records for the lean; Ratchet & Clank's own `set_hero_animation` and
   `hero_queue_sequence`, found by name, for the long jump's pose (animation 0x26), its flight
-  looped. Each polyfill's comment says what differs from Going Commando.
+  played back and forth. Each polyfill's comment says what differs from Going Commando.
 
 The mod's own parts: the hooks (`rac1.player.update` around the hero's update,
 `rac1.player.update_movement` to move him by the copied code while he charges,

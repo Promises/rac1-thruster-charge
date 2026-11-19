@@ -30,6 +30,7 @@
 #include <cstdint>
 #include <cstring>
 #include <functional>
+#include <string_view>
 #include <utility>
 
 #include "../thruster_charge.hpp"
@@ -130,23 +131,107 @@ inline std::int32_t rac1_animation(std::int32_t gc) {
 
 // The long jump is one jump: its animation plays once, then wraps to its first frame
 // (advance_hero_animation, hero_mapped_animations.c:474-...); it has 14 frames (the mod's log on
-// the PAL disc). A charge lasts as long as R1 is held, so it plays the flight only:
-//  - set_hero_animation starts it at pose_loop_from (its second argument is the start frame: it
-//    writes Moby.prev_frame, +0x51), past the take-off;
-//  - it then loops pose_loop_from..pose_loop_to (default 4..9, short of the landing) by Ratchet &
-//    Clank's own hero_queue_sequence (hero_mapped_animations.c:428-437), for as long as the charge
-//    lasts: the loop stays until the next set_hero_animation. Past `to`, advance_hero_animation
-//    blends back to `from` over three ticks (it sets the frame rate to a third for that frame): the
-//    smoothest jump back the game has. Wrapping the frame by hand would snap in one tick, and the
-//    advance cannot play a sequence backwards, so no ping-pong.
-//  - hero_queue_sequence refuses a `to` the animation does not have (it compares with its
-//    AnimSeq.frame_count, +0x10), and the animation then plays to its end and starts over: so both
-//    are clamped to its frames, which the mod logs once a level for tuning.
-// from == to holds that one frame still instead (Hero.anim_speed, +0xA90, at 0 while he charges).
-// The long jump state's own frame numbers (apex 18, hits until 28, landing toward 30,
-// hero_vehicle_and_collision.c:1798-1800) are its anim_frame, another scale: not these.
-constexpr std::int32_t kChargePoseFrom = 4;
-constexpr std::int32_t kChargePoseTo = 9;
+// the PAL disc). A charge lasts as long as R1 is held, so it plays its flight only, frames
+// pose_loop_from..pose_loop_to (default 3..5), clamped to the frames it has (hero_queue_sequence
+// refuses a `to` past them, and the animation would then play to its end and start over), which
+// the mod logs once a level. set_hero_animation starts it at `from` (its second argument is the
+// start frame: it writes Moby.prev_frame, +0x51). Then, by pose_motion:
+//  - pingpong (the default): `from` to `to` and back, a triangle wave, so it never jumps back. The
+//    game cannot play an animation backwards (advance_hero_animation only steps forward), so the
+//    mod sets the frame itself each tick: Hero.anim_speed (+0xA90) held at 0, by which the advance
+//    then leaves the frame as it is, and the moby's two frames and the blend between them written
+//    (PingPong, set_pose_frame). The advance and the skeleton draw a pose between Moby.frame (+0x50,
+//    its data +0x68) and Moby.prev_frame (+0x51, the next one, its data +0x6C), Moby.anim_time
+//    (+0x54) of the way: so the frame is fractional. Hero.anim_frame (+0xAA8) is the advance's
+//    output (compute_interpolated_record_value), not read back: writing it would do nothing.
+//  - loop: Ratchet & Clank's own hero_queue_sequence (hero_mapped_animations.c:428-437): past `to`,
+//    a three-tick blend back to `from`.
+//  - hold, or from == to: that one frame still (anim_speed at 0).
+constexpr std::int32_t kChargePoseFrom = 3;
+constexpr std::int32_t kChargePoseTo = 5;
+
+enum class PoseMotion { PingPong, Loop, Hold };
+
+// The setting pose_motion's value; an unknown one is the default.
+inline PoseMotion pose_motion_named(const char* name) {
+    const std::string_view v = name != nullptr ? name : "";
+    if (v == "loop") {
+        return PoseMotion::Loop;
+    }
+    if (v == "hold") {
+        return PoseMotion::Hold;
+    }
+    return PoseMotion::PingPong;
+}
+
+// A position going from `from` to `to` and back, by a distance each step: a triangle wave in
+// frames.
+class PingPong {
+public:
+    void start(float from, float to) {
+        m_from = from;
+        m_to = std::max(from, to);
+        m_at = from;
+        m_forward = true;
+    }
+
+    float at() const { return m_at; }
+    bool forward() const { return m_forward; }
+
+    float step(float distance) {
+        const float span = m_to - m_from;
+        if (!(span > 0.0f) || !(distance > 0.0f) || !std::isfinite(distance)) {
+            return m_at;
+        }
+        // A whole way there and back changes nothing.
+        distance = std::fmod(distance, 2.0f * span);
+        m_at += m_forward ? distance : -distance;
+        while (m_at > m_to || m_at < m_from) {
+            if (m_at > m_to) {
+                m_at = 2.0f * m_to - m_at;
+                m_forward = false;
+            } else {
+                m_at = 2.0f * m_from - m_at;
+                m_forward = true;
+            }
+        }
+        return m_at;
+    }
+
+private:
+    float m_from = 0.0f;
+    float m_to = 0.0f;
+    float m_at = 0.0f;
+    bool m_forward = true;
+};
+
+// A fractional frame as the moby shows it: frame `a`, the next `b`, `t` of the way (Moby.frame,
+// prev_frame, anim_time). `t` stays under 0.985: the advance takes a time within 0.01 of 1 as
+// the next frame. At `last` both are `last`.
+struct FramePair {
+    std::int32_t a;
+    std::int32_t b;
+    float t;
+};
+
+inline FramePair frame_pair(float at, std::int32_t last) {
+    auto a = static_cast<std::int32_t>(std::floor(at));
+    float t = at - static_cast<float>(a);
+    if (t >= 0.985f) {
+        ++a;
+        t = 0.0f;
+    }
+    if (a >= last) {
+        return {last, last, 0.0f};
+    }
+    return {a, a + 1, t < 0.0f ? 0.0f : t};
+}
+
+// The pingpong's rate: what the advance would add a tick at anim_speed 1, the frame's own rate (its
+// data's first float, AnimSeq frames[i]); a value out of reason, half a frame a tick.
+inline float pose_rate(float frame_rate) {
+    return std::isfinite(frame_rate) && frame_rate > 0.01f && frame_rate <= 2.0f ? frame_rate : 0.5f;
+}
 
 // The frames to hold for the settings, in an animation of `frame_count` frames: both within it,
 // to no earlier than from. frame_count 0 (unknown): as asked.
@@ -172,7 +257,18 @@ constexpr std::uint32_t kMobyClass = 0x24;
 constexpr std::uint32_t kClassSequences = 0x48;
 constexpr std::uint32_t kSequenceFrameCount = 0x10;
 constexpr std::uint32_t kSequenceSound = 0x11;
-constexpr std::uint32_t kMobyStartFrame = 0x51;
+// The moby's animation (include/structs/moby.h): its frame and the next one (the advance's
+// prev_frame, which set_hero_animation's start frame goes in), its sequence and the next one (they
+// differ while it blends into a new one), the time between the two frames, and their data.
+constexpr std::uint32_t kMobyFrame = 0x50;
+constexpr std::uint32_t kMobyNextFrame = 0x51;
+constexpr std::uint32_t kMobySequence = 0x52;
+constexpr std::uint32_t kMobyNextSequence = 0x53;
+constexpr std::uint32_t kMobyAnimTime = 0x54;
+constexpr std::uint32_t kMobyFrameData = 0x68;
+constexpr std::uint32_t kMobyNextFrameData = 0x6C;
+// AnimSeq.frames: a pointer to each frame's data, whose first float is its rate.
+constexpr std::uint32_t kSequenceFrames = 0x1C;
 constexpr std::uint32_t kMobySound = 0x7C;
 constexpr std::uint32_t kMobyTriggers = 0x7E;
 constexpr std::uint32_t kHeroAnimSpeed = 0xA90;
@@ -431,7 +527,7 @@ public:
     // Going Commando's animation in Ratchet & Clank's terms (gc_shim_set_hero_animation).
     void play_animation(std::int32_t gc_animation, std::int32_t blend, float frames);
     // The charge's pose settings (frames of the long jump's animation; from == to: frozen).
-    void set_pose(std::int32_t from, std::int32_t to);
+    void set_pose(std::int32_t from, std::int32_t to, PoseMotion motion = PoseMotion::PingPong);
     // Each tick of a charge, after the copied movement: the pose held, the long jump's sounds off.
     void hold_pose();
     // Going Commando's frame timer decremented by a tick (math_fast_float_d).
@@ -474,7 +570,16 @@ private:
     std::int32_t m_pose_to = kChargePoseTo;
     // The pose being held (and frozen), since the charge's animation started.
     bool m_pose = false;
+    // anim_speed held at 0 (hold and pingpong).
     bool m_pose_frozen = false;
+    PoseMotion m_pose_motion = PoseMotion::PingPong;
+    // The pingpong: on once the blend into the animation is done.
+    bool m_pingpong = false;
+    bool m_pingpong_started = false;
+    PingPong m_pingpong_at;
+    std::uint32_t m_pose_sequence = 0;
+    std::int32_t m_pose_first = 0;
+    std::int32_t m_pose_last = 0;
     // The long jump animation's frame count last logged (-1: none yet).
     std::int32_t m_pose_frames_logged = -1;
 };

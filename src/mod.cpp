@@ -38,6 +38,7 @@
 #include <array>
 #include <cstdint>
 #include <cstring>
+#include <string>
 
 #include "openrac/games/rac1.hpp"
 #include "openrac/mod.hpp"
@@ -84,7 +85,8 @@ std::int32_t hero_state(const openrac::Memory& m) { return m.read<std::int32_t>(
 
 void read_settings(openrac::Mod& mod) {
     layer().set_speed_scale(mod.setting<float>("speed"));
-    layer().set_pose(mod.setting<std::int32_t>("pose_loop_from"), mod.setting<std::int32_t>("pose_loop_to"));
+    layer().set_pose(mod.setting<std::int32_t>("pose_loop_from"), mod.setting<std::int32_t>("pose_loop_to"),
+                     gc::pose_motion_named(mod.setting<std::string>("pose_motion").c_str()));
 }
 
 // The game as the translation layer reaches it in the level loaded now: each level has its own
@@ -314,4 +316,4 @@ void load(openrac::Mod& mod) {
 
 }  // namespace
 
-OPENRAC_MOD_CPP("thruster-charge", "0.6.1", load)
+OPENRAC_MOD_CPP("thruster-charge", "0.6.2", load)

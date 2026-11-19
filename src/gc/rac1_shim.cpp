@@ -268,6 +268,8 @@ void Shim::end_charge() {
     }
     m_pose = false;
     m_pose_frozen = false;
+    m_pingpong = false;
+    m_pingpong_started = false;
 }
 
 std::int32_t Shim::enter_state(std::int32_t gc_action) {
@@ -346,26 +348,35 @@ void Shim::play_animation(std::int32_t gc_animation, std::int32_t blend, float f
         m_pose_frames_logged = count;
         char line[160];
         std::snprintf(line, sizeof line,
-                      "Thruster Charge: the long jump's animation (0x26) has %d frames; the charge plays from %d "
-                      "and loops %d..%d",
-                      count, held.first, held.first, held.second);
+                      "Thruster Charge: the long jump's animation (0x26) has %d frames; the charge plays %d..%d (%s)",
+                      count, held.first, held.second,
+                      held.first == held.second || m_pose_motion == PoseMotion::Hold ? "held"
+                      : m_pose_motion == PoseMotion::Loop                            ? "looped"
+                                                                                     : "back and forth");
         game.info(line);
     }
     // Going Commando's `blend` (0) is the start frame here: the loop's first, past the take-off.
     game.set_animation(animation, held.first, frames);
     // The hover's looping sound, not the long jump's.
     m.write(moby + kMobySound, hover != 0 ? m.read<std::uint8_t>(hover + kSequenceSound) : std::uint8_t{0xFF});
-    m_pose_frozen = held.first == held.second;
-    if (!m_pose_frozen && game.loop_animation) {
+    const bool still = held.first == held.second || m_pose_motion == PoseMotion::Hold;
+    m_pingpong = !still && m_pose_motion == PoseMotion::PingPong;
+    m_pingpong_started = false;
+    m_pose_frozen = still || m_pingpong;
+    m_pose_sequence = pose;
+    m_pose_first = held.first;
+    m_pose_last = held.second;
+    if (!still && !m_pingpong && game.loop_animation) {
         game.loop_animation(held.first, held.second);
     }
     m_pose = true;
     hold_pose();
 }
 
-void Shim::set_pose(std::int32_t from, std::int32_t to) {
+void Shim::set_pose(std::int32_t from, std::int32_t to, PoseMotion motion) {
     m_pose_from = from;
     m_pose_to = to;
+    m_pose_motion = motion;
 }
 
 void Shim::hold_pose() {
@@ -380,6 +391,26 @@ void Shim::hold_pose() {
     if (m_pose_frozen) {
         m.write(game.hero + kHeroAnimSpeed, 0.0f);
     }
+    // The pingpong, once the blend into the animation is done (the moby's sequence and next
+    // sequence both the long jump's): the frame stepped by the frame's own rate, and written.
+    if (!m_pingpong || moby == 0 || m_pose_sequence == 0 || m.read<std::uint8_t>(moby + kMobySequence) != kChargePose ||
+        m.read<std::uint8_t>(moby + kMobyNextSequence) != kChargePose) {
+        return;
+    }
+    if (!m_pingpong_started) {
+        m_pingpong_at.start(static_cast<float>(m_pose_first), static_cast<float>(m_pose_last));
+        m_pingpong_started = true;
+    } else {
+        const FramePair now = frame_pair(m_pingpong_at.at(), m_pose_last);
+        const std::uint32_t data = m.read<std::uint32_t>(m_pose_sequence + kSequenceFrames + static_cast<std::uint32_t>(now.a) * 4);
+        m_pingpong_at.step(pose_rate(data != 0 ? m.read<float>(data) : 0.0f));
+    }
+    const FramePair p = frame_pair(m_pingpong_at.at(), m_pose_last);
+    m.write(moby + kMobyFrame, static_cast<std::uint8_t>(p.a));
+    m.write(moby + kMobyNextFrame, static_cast<std::uint8_t>(p.b));
+    m.write(moby + kMobyFrameData, m.read<std::uint32_t>(m_pose_sequence + kSequenceFrames + static_cast<std::uint32_t>(p.a) * 4));
+    m.write(moby + kMobyNextFrameData, m.read<std::uint32_t>(m_pose_sequence + kSequenceFrames + static_cast<std::uint32_t>(p.b) * 4));
+    m.write(moby + kMobyAnimTime, p.t);
 }
 
 void Shim::tint_flames() {

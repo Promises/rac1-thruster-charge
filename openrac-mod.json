@@ -2,7 +2,7 @@
   "format": 2,
   "id": "thruster-charge",
   "name": "Thruster Charge",
-  "version": "0.6.1",
+  "version": "0.6.2",
   "author": "Henning Berge",
   "description": "Going Commando's Charge Boots charge on Clank's Thruster-Pack, running Going Commando's own copied code: with the Thruster-Pack on, double-tap R1 and hold to charge along his facing in the Thruster long jump's pose, steering with the stick, the Thruster-Pack's flames blue; enemies in the way are hit, a wall bonks him back. It replaces the Thruster-Pack's hover; its long jump and air boost stay. Needs OpenRAC with the rac1.player.update_movement, rac1.fx.world_quad.draw, rac1.fx.thruster_flame.draw and rac1.fx.burst.spawn hook points.",
   "license": "GPL-3.0-or-later AND GPL-3.0-only",
@@ -32,21 +32,42 @@
     },
     {
       "key": "pose_loop_from",
-      "name": "Pose: loop from frame",
+      "name": "Pose: from frame",
       "type": "int",
-      "default": 4,
+      "default": 3,
       "min": 0,
       "max": 60,
-      "description": "The Thruster long jump animation's frame the charge starts at and loops back to (it has 14 frames on PAL; the log says, once a level)."
+      "description": "The Thruster long jump animation's first frame the charge's pose moves between (it has 14 frames on PAL; the log says, once a level)."
     },
     {
       "key": "pose_loop_to",
-      "name": "Pose: loop to frame",
+      "name": "Pose: to frame",
       "type": "int",
-      "default": 9,
+      "default": 5,
       "min": 0,
       "max": 60,
-      "description": "The frame it loops back from; the same as the first: that frame held still."
+      "description": "The last frame; the same as the first: that frame held still."
+    },
+    {
+      "key": "pose_motion",
+      "name": "Pose: motion",
+      "type": "choice",
+      "default": "pingpong",
+      "choices": [
+        {
+          "value": "pingpong",
+          "name": "Back and forth"
+        },
+        {
+          "value": "loop",
+          "name": "Loop"
+        },
+        {
+          "value": "hold",
+          "name": "Hold still"
+        }
+      ],
+      "description": "How the pose moves between its frames: back and forth (no jump back), the game's loop, or held at the first."
     }
   ]
 }
