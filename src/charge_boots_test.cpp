@@ -1,17 +1,26 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-3.0-or-later
 //
-// The Charge Boots' rules (charge_boots.hpp) on plain values.
+// The mod's rules (charge_boots.hpp), and the translation layer (gc/rac1_shim.hpp) running Going
+// Commando's copied charge code (src/gc/*.c) on a fake Ratchet & Clank: a buffer of game memory and
+// recording stand-ins for the game's functions. What the game's own functions would do is the
+// fake's guess (the simplest), so these test the copied code's path through the layer: which game
+// calls it makes with which numbers, and what lands in Ratchet & Clank's hero. They do not show the
+// game behaves so.
+#include <array>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
-#include <cstdlib>
+#include <cstring>
+#include <utility>
 #include <vector>
 
 #include "charge_boots.hpp"
+#include "gc/rac1_shim.hpp"
 
 namespace {
 
 using namespace charge_boots;
+namespace gc = charge_boots::gc;
 
 int failures = 0;
 
@@ -22,150 +31,167 @@ void check(bool ok, const char* what) {
     }
 }
 
-bool near(float a, float b, float tolerance = 1e-3f) { return std::fabs(a - b) <= tolerance; }
+bool near(float a, float b, float tolerance = 1e-4f) { return std::fabs(a - b) <= tolerance; }
 
 constexpr float kNtsc = 1.0f / 60.0f;
 constexpr float kPal = 1.0f / 50.0f;
+constexpr float kPi = 3.14159265f;
 
-// Ticks of nothing pressed.
-void idle(DoubleTap& tap, int ticks, float dt = kNtsc) {
-    for (int i = 0; i < ticks; ++i) {
-        tap.update(false, false, dt);
+// --- The fake game ---
+
+// Ratchet & Clank's hero fields the tests set and read (include/structs/hero.h).
+constexpr std::uint32_t kPos = 0x80;
+constexpr std::uint32_t kBodyCenter = 0xD0;
+constexpr std::uint32_t kGroundSpeed = 0x194;
+constexpr std::uint32_t kStateTimer = 0x198;
+constexpr std::uint32_t kCapsuleRadius = 0x234;
+constexpr std::uint32_t kGroundZ = 0x2D8;
+constexpr std::uint32_t kItemAnim = 0x20A8;
+constexpr std::int32_t kSelf = 0;
+
+struct Fake {
+    std::vector<std::uint8_t> memory = std::vector<std::uint8_t>(0x200000);
+    Disc disc = disc_for(false);
+    std::vector<std::pair<float, float>> approaches;
+    std::vector<float> planars;
+    std::vector<std::array<float, 4>> turns;
+    std::vector<std::pair<std::int32_t, std::int32_t>> enters;
+    std::vector<gc::Hit> hits;
+    std::vector<std::pair<std::int32_t, bool>> sounds;
+    int stops = 0;
+    std::int32_t moby_ahead = -1;
+    bool wall_ahead = false;
+
+    gc::Memory mem() { return gc::Memory{memory.data()}; }
+
+    template <class T>
+    T get(std::uint32_t offset) {
+        return mem().read<T>(disc.hero + offset);
     }
-}
-
-void the_double_tap_needs_the_second_press_within_30_frames() {
-    DoubleTap tap;
-    check(!tap.update(true, true, kNtsc), "the first press: nothing yet");
-    idle(tap, 28);
-    check(tap.update(true, true, kNtsc), "the second press 29 frames on: a charge");
-
-    DoubleTap late;
-    late.update(true, true, kNtsc);
-    idle(late, 30);
-    check(!late.update(true, true, kNtsc), "31 frames on: too late, a first press again");
-    check(late.update(true, true, kNtsc), "and a press right after it counts as the second");
-
-    DoubleTap released;
-    released.update(true, true, kNtsc);
-    idle(released, 3);
-    check(!released.update(true, false, kNtsc), "pressed and let go in the same poll: not held");
-
-    DoubleTap pal;
-    pal.update(true, true, kPal);
-    idle(pal, 23, kPal);
-    check(pal.update(true, true, kPal), "PAL: 24 ticks of a 50th (0.48 s) still in the window");
-}
-
-void a_triple_tap_is_one_charge() {
-    DoubleTap tap;
-    tap.update(true, true, kNtsc);
-    tap.update(false, false, kNtsc);
-    check(tap.update(true, true, kNtsc), "second press: a charge");
-    tap.update(false, false, kNtsc);
-    check(!tap.update(true, true, kNtsc), "third press: the window was used, a first press again");
-}
-
-void he_starts_on_his_feet_only() {
-    check(can_start_from({kIdle, kModeIdle, 10, false, false}), "idle");
-    check(can_start_from({0x2, kModeRun, 10, false, false}), "running");
-    check(can_start_from({0x4, kModeCrouch, 10, false, false}), "crouched (the first R1)");
-    check(can_start_from({0x7, kModeJump, 1, false, false}), "a jump's landing tick");
-    check(!can_start_from({0x7, kModeJump, 0, false, false}), "in the air");
-    check(!can_start_from({kIdle, kModeIdle, 10, true, false}), "in a vehicle");
-    check(!can_start_from({kIdle, kModeIdle, 10, false, true}), "held by the Magneboots");
-    check(!can_start_from({kHover, kModeRun, 10, false, false}), "already hovering");
-    check(!can_start_from({0x16, kModeHurt, 10, false, false}), "hurt");
-}
-
-// Runs a charge for `seconds` at 60 a second, the stick still; returns the speed then.
-float run(Charge& c, float seconds, float dt = kNtsc) {
-    float speed = 0.0f;
-    const int ticks = static_cast<int>(std::lround(seconds / dt));
-    for (int i = 0; i < ticks; ++i) {
-        speed = c.step(dt, 0.0f, 0.0f).speed;
-        c.advance(dt);
+    template <class T>
+    void set(std::uint32_t offset, T v) {
+        mem().write(disc.hero + offset, v);
     }
-    return speed;
+    float lean(std::uint32_t offset) { return mem().read<float>(disc.lean_l00 + offset); }
+
+    void pad(bool r1_held, bool r1_pressed) {
+        mem().write(disc.pad + kPadHeld, r1_held ? static_cast<std::int32_t>(kPadR1) : 0);
+        mem().write(disc.pad + kPadPressed, r1_pressed ? static_cast<std::int32_t>(kPadR1) : 0);
+    }
+};
+
+Fake* g_fake = nullptr;
+
+// A fresh fake, Ratchet idle on flat ground at z 0, facing +x, and the layer wired to it.
+Fake& fresh(float frame_time = kNtsc) {
+    static Fake fake;
+    gc::Shim& s = gc::shim();
+    // The last test's charge ended on the last test's fake.
+    s.reset();
+    fake = Fake{};
+    g_fake = &fake;
+    s.set_speed_scale(1.0f);
+    s.set_owned(true);
+    s.set_tick(frame_time);
+    std::memset(gc_shim_hero, 0, gc::kHeroBytes);
+    std::memset(gc_shim_lean, 0, gc::kLeanBytes);
+    gc::Game& g = s.game;
+    g = gc::Game{};
+    g.memory = fake.mem();
+    g.hero = fake.disc.hero;
+    g.pad = fake.disc.pad;
+    g.lean = fake.disc.lean_l00;
+    // speed_step: ground speed toward target speed (hero_animation_slots.c:2880).
+    g.approach_speed = [](float up, float down) {
+        Fake& f = *g_fake;
+        f.approaches.emplace_back(up, down);
+        const float target = f.get<float>(kTargetSpeed);
+        float speed = f.get<float>(kGroundSpeed);
+        speed = speed < target ? std::min(target, speed + up) : std::max(target, speed - down);
+        f.set(kGroundSpeed, speed);
+    };
+    // set_planar_vel: velocity at the ground speed along the angle, his facing above pi.
+    g.set_planar_velocity = [](float angle) {
+        Fake& f = *g_fake;
+        f.planars.push_back(angle);
+        const float yaw = angle <= kPi ? angle : f.get<float>(kFacing);
+        const float speed = f.get<float>(kGroundSpeed);
+        f.set(kVelocity, speed * std::cos(yaw));
+        f.set(kVelocity + 4, speed * std::sin(yaw));
+        f.set(kVelocity + 8, 0.0f);
+    };
+    g.turn_to_heading = [](std::int32_t mode, float a, float b, float c) {
+        g_fake->turns.push_back({static_cast<float>(mode), a, b, c});
+    };
+    // HeroEnterMoveState: the state, its timer from 0.
+    g.enter_move_state = [](std::int32_t to, std::int32_t force) {
+        Fake& f = *g_fake;
+        f.enters.emplace_back(to, force);
+        f.set(kHeroState, to);
+        f.set(kStateTimer, 0);
+        return std::int32_t{1};
+    };
+    g.moby_on_line = [](const float*, const float*) { return g_fake->moby_ahead; };
+    g.level_on_line = [](const float*, const float*) { return g_fake->wall_ahead; };
+    g.hit = [](const gc::Hit& h) { g_fake->hits.push_back(h); };
+    g.self_slot = [] { return kSelf; };
+    g.sound_play = [](std::int32_t sound, bool loop) {
+        g_fake->sounds.emplace_back(sound, loop);
+        return std::int32_t{3};
+    };
+    g.sound_stop = [](std::int32_t) { ++g_fake->stops; };
+    g.log = [](const char* what) { std::printf("layer: %s\n", what); };
+    fake.set(kHeroState, kIdle);
+    fake.set(kControlMode, kModeIdle);
+    fake.set(kGroundedFrames, 10);
+    fake.set(kCapsuleRadius, 0.5f);
+    return fake;
 }
 
-void the_charge_bursts_then_cruises() {
-    Charge c;
-    c.start(5.7f);
-    check(c.active() && !c.ready(), "on");
-    check(near(c.wanted(), 30.0f), "the burst: 30 units a second");
-    const Charge::Step first = c.step(kNtsc, 0.0f, 0.0f);
-    check(near(first.speed, 5.7f + 0.027777778f * 60.0f), "up by 0.0278 a frame (in units a second)");
-    c.advance(kNtsc);
-    check(near(run(c, 0.4f), 30.0f), "at the burst's speed within its first half second");
-    run(c, 35 * kNtsc);  // 60 frames in all
-    check(near(c.wanted(), 11.5f, 1e-2f), "after 60 frames: the cruise, 11.5");
-    const float s = c.step(kNtsc, 0.0f, 0.0f).speed;
-    check(near(s, 30.0f - 0.004166667f * 60.0f, 2e-2f), "down by 0.00417 a frame");
-    c.advance(kNtsc);
-    check(near(run(c, 2.0f), 11.5f, 1e-2f), "settled at the cruise");
+// One tick as mod.cpp runs it: the double tap before the hero's update, the movement in it, the
+// decider after it. The game's own update in between is the fake's: the state timer counts.
+void tick(Fake& f) {
+    gc::Shim& s = gc::shim();
+    s.observe();
+    s.load();
+    ProcessHeroEquippedItemInput();
+    s.flush();
+    if (s.drives_movement()) {
+        s.load();
+        hero_l00_update_state_machine();
+        s.flush();
+    }
+    f.set(kStateTimer, f.get<std::int32_t>(kStateTimer) + 1);
+    s.observe();
+    if (s.charging() && f.get<std::int32_t>(kHeroState) == kHover) {
+        s.load();
+        hero_l00_decide_state();
+        s.flush();
+    }
+    s.end_tick();
 }
 
-void the_charge_is_the_same_on_pal() {
-    Charge ntsc;
-    Charge pal;
-    ntsc.start(0.0f);
-    pal.start(0.0f);
-    check(near(run(ntsc, 0.3f, kNtsc), run(pal, 0.3f, kPal), 0.2f), "the same speed 0.3 s in, at 60 or 50 a second");
+// Ratchet in a charge: the double tap.
+void start_charge(Fake& f) {
+    f.pad(true, true);
+    tick(f);
+    f.pad(false, false);
+    tick(f);
+    f.pad(true, true);
+    tick(f);
+    f.pad(true, false);
 }
 
-void the_speed_setting_scales_the_targets() {
-    Charge c;
-    c.set_speed_scale(0.5f);
-    c.start(0.0f);
-    check(near(c.wanted(), 15.0f), "half: a 15 unit burst");
-    c.set_speed_scale(NAN);
-    check(near(c.wanted(), 30.0f), "nonsense: as Going Commando");
+// Only the copied state machine's movement, one tick (no decider, no trigger).
+void move(Fake& f) {
+    gc::Shim& s = gc::shim();
+    s.load();
+    hero_l00_update_state_machine();
+    s.flush();
+    (void)f;
 }
 
-void the_stick_across_turns_him() {
-    Charge c;
-    c.start(0.0f);
-    check(c.step(kNtsc, 1.0f, 0.1f).turn == 0.0f, "inside the dead zone: no turn");
-    const float burst = c.step(kNtsc, 1.0f, 1.0f).turn;
-    check(near(burst, -0.020362178f * 0.1f, 1e-5f), "in the burst: a tenth, to the right is clockwise");
-    run(c, 1.0f);
-    const float cruise = c.step(kNtsc, -1.0f, 1.0f).turn;
-    check(near(cruise, 0.020362178f, 1e-5f), "cruising, full left: 0.0204 a frame");
-    const float half = c.step(kNtsc, 0.7f, 0.7f).turn;
-    check(near(half, -0.020362178f * 0.49f, 1e-5f), "across times how far it is pushed");
-    check(near(c.step(kPal, -1.0f, 1.0f).turn, 0.020362178f * 1.2f, 1e-5f), "PAL: a 50th turns 1.2 frames' worth");
-}
-
-void he_leans_into_the_turn() {
-    check(near(lean_for_turn(0.020362178f, kNtsc), 0.5498f), "full turn: 27 times it");
-    check(near(lean_for_turn(-1.0f, kNtsc), -1.7f), "at most 1.7");
-    check(near(lean_for_turn(0.020362178f * 1.2f, kPal), 0.5498f), "the same on PAL");
-    check(lean_for_turn(0.1f, 0.0f) == 0.0f, "no tick: no lean");
-}
-
-void r1_ends_it_after_61_frames() {
-    Charge c;
-    c.start(0.0f);
-    run(c, 60 * kNtsc);
-    check(!c.released(false), "let go at 60 frames: it goes on");
-    check(!c.released(true), "held: goes on");
-    run(c, kNtsc);
-    check(c.released(false), "let go at 61: it ends");
-    c.end();
-    check(!c.active() && !c.ready(), "over, locked out");
-    c.advance(29 * kNtsc);
-    check(!c.ready(), "29 frames on: still locked out");
-    c.advance(kNtsc);
-    check(c.ready(), "30 frames on: another may start");
-}
-
-void the_wall_bonk() {
-    check(bonks(true, 5.0f, 11.5f), "at a wall, held to under three quarters");
-    check(!bonks(true, 10.0f, 11.5f), "at a wall but sliding along it");
-    check(!bonks(false, 0.0f, 11.5f), "no wall (a slope, a moby that gave way)");
-    check(!bonks(true, 0.0f, 3.0f), "barely moving yet");
-}
+// --- The mod's rules ---
 
 void requests_for_the_hover() {
     check(judge(kHover, 1, 0x2, kModeRun, false, false) == Request::Refuse, "the Thruster's double tap: refused");
@@ -191,9 +217,8 @@ void ownership_comes_with_the_persuader_and_is_kept() {
     check(o.observe(true), "the item owned: the record to write");
     check(o.owned(false), "owned");
     check(!o.observe(true), "written once");
-    const std::vector<std::uint8_t> record = Ownership::encode(true);
     Ownership loaded;
-    loaded.restore(record);
+    loaded.restore(Ownership::encode(true));
     check(loaded.owned(false), "a save with the record: owned");
     loaded.restore({});
     check(!loaded.owned(false), "a new game: not owned");
@@ -224,26 +249,339 @@ void angles_and_ticks() {
           "the tick's length, or a 60th");
 }
 
+// --- The translation layer's tables ---
+
+void states_and_animations_map() {
+    check(gc::rac1_state(gc::kGcCharge) == kHover, "the charge runs in the hover");
+    check(gc::rac1_state(gc::kGcBonk) == kWallBonk, "the bonk in the wall bonk");
+    check(gc::rac1_state(gc::kGcStop) == kStop, "the stop in the stop");
+    check(gc::rac1_state(0x16) == -1, "no other");
+    check(gc::gc_state(kHover, true, false) == gc::kGcCharge, "the hover is the charge while charging");
+    check(gc::gc_state(kHover, false, false) == kHover, "else the hover");
+    check(gc::gc_state(kWallBonk, false, true) == gc::kGcBonk, "the bonk after a charge");
+    check(gc::gc_state(kWallBonk, false, false) == kWallBonk, "else the game's own bonk");
+    check(gc::gc_control_mode(kModeRun, gc::kGcCharge) == gc::kGcChargeControlMode, "control mode 28 in a charge");
+    check(gc::gc_control_mode(kModeRun, gc::kGcBonk) == gc::kGcBonkControlMode, "10 in its bonk");
+    check(gc::gc_control_mode(kModeCrouch, kIdle) == kModeCrouch, "else the same number");
+    check(gc::rac1_animation(0x8B) == 0x13 && gc::rac1_animation(0x29) == 0x29 && gc::rac1_animation(6) == -1,
+          "animations");
+}
+
+void the_field_table_is_sound() {
+    for (const gc::Field& f : gc::kHeroFields) {
+        const std::size_t gc_end = f.gc + f.count * gc::size_of(f.gc_kind);
+        const std::size_t rac1_end = f.rac1 + f.count * gc::size_of(f.rac1_kind);
+        check(gc_end <= 0x2600 && rac1_end <= 0x2600, "fields inside both heroes");
+        check(f.gc % gc::size_of(f.gc_kind) == 0 && f.rac1 % gc::size_of(f.rac1_kind) == 0, "fields aligned");
+        check(!(f.gc < gc::kGcControlMode + 4 && gc_end > gc::kGcMoby), "the table leaves the translated words alone");
+        for (const gc::Field& g : gc::kHeroFields) {
+            if (&g == &f) {
+                continue;
+            }
+            const std::size_t g_end = g.gc + g.count * gc::size_of(g.gc_kind);
+            check(gc_end <= g.gc || g_end <= f.gc, "no two fields overlap in the copy");
+        }
+    }
+    // The fields mod.cpp's layout already had, the same offsets.
+    const auto rac1_of = [](std::uint32_t gc_offset) {
+        for (const gc::Field& f : gc::kHeroFields) {
+            if (f.gc == gc_offset) {
+                return f.rac1;
+            }
+        }
+        return 0xFFFFFFFFu;
+    };
+    check(rac1_of(0x0F0) == kVelocity && rac1_of(0x110) == kDisplacement && rac1_of(0x1A0) == kMoveYaw &&
+              rac1_of(0x1A8) == kYawError && rac1_of(0x1B0) == kTargetSpeed && rac1_of(0x1E0) == kMoveLockTimer &&
+              rac1_of(0x287) == kWallHit && rac1_of(0x31C) == kGroundDistance && rac1_of(0x340) == kGroundedFrames &&
+              rac1_of(0x348) == kMagnetFlag && rac1_of(gc::kGcStick) == kStickX &&
+              rac1_of(0x22B4) == kVehicleMode && rac1_of(0x22C3) == kGravityMode &&
+              rac1_of(0x24B8) == kStickMagnitude,
+          "the table agrees with layout.hpp");
+    check(gc::shim().handles_unambiguous(), "handles resolve one way");
+    check(gc::shim().resolve(static_cast<std::int32_t>(reinterpret_cast<std::uintptr_t>(gc_shim_hero + 0x88))) ==
+              gc_shim_hero + 0x88,
+          "a handle into the copy");
+    check(gc::shim().resolve(static_cast<std::int32_t>(reinterpret_cast<std::uintptr_t>(gc_shim_lean + 0x60))) ==
+              gc_shim_lean + 0x60,
+          "a handle into the tilt records");
+}
+
+void load_translates_ratchets_hero() {
+    Fake& f = fresh(kPal);
+    f.set(kVelocity, 0.24f);
+    f.set(kDisplacement + 4, 0.12f);
+    f.set(kStateTimer, 51);
+    f.set(kMoveLockTimer, 25);
+    f.set(kFacing, 1.25f);
+    f.set(kStickX, -0.5f);
+    f.set(kStickMagnitude, 0.75f);
+    f.set(kWallHit, std::uint8_t{1});
+    f.set(kMoby, 0x001A2B30u);
+    f.set(kGravityMode, std::uint8_t{0});
+    f.pad(true, false);
+    gc::shim().load();
+    const gc::Memory copy{gc_shim_hero};
+    check(near(copy.read<float>(0xF0), 0.2f), "velocity: a tick's over k (1.2 on PAL)");
+    check(near(copy.read<float>(0x114), 0.1f), "displacement too");
+    check(copy.read<std::int32_t>(0x1B8) == 61, "51 ticks are 61 frames");
+    check(copy.read<std::int16_t>(0x1E0) == 30, "the lock: 25 ticks are 30 frames");
+    check(copy.read<float>(0x98) == 1.25f, "facing as it is");
+    check(copy.read<float>(0x1FB0) == -0.5f && copy.read<float>(0x24B8) == 0.75f, "the stick");
+    check(copy.read<std::uint8_t>(0x287) == 1, "the wall");
+    check(copy.read<std::int32_t>(gc::kGcState) == kIdle && copy.read<std::int32_t>(gc::kGcControlMode) == kModeIdle,
+          "state and control mode");
+    check(copy.read<std::uint32_t>(gc::kGcMoby) == 0x001A2B30u &&
+              copy.read<std::uintptr_t>(gc::kGcMobyPointer) == 0x001A2B30u,
+          "the moby, as a word and as the Hero union's pointer");
+    check((gc_shim_pad[kPadHeld] & kPadR1) != 0, "the pad");
+    check(gc_shim_items_owned[0x26] == 1 && gc_shim_item_slots[3] == 54, "the boots owned and worn");
+}
+
+void flush_writes_back_only_what_changed() {
+    Fake& f = fresh(kPal);
+    f.set(kVelocity, 0.24f);
+    f.set(kMoveYaw, 0.5f);
+    f.set(kDisplacement, 0.3f);
+    gc::Shim& s = gc::shim();
+    s.load();
+    const gc::Memory copy{gc_shim_hero};
+    copy.write(0xF4, 0.1f);
+    copy.write(0x110, 9.0f);
+    f.set(kMoveYaw, 0.75f);
+    s.flush();
+    check(near(f.get<float>(kVelocity + 4), 0.12f), "a changed velocity: k times it");
+    check(near(f.get<float>(kVelocity), 0.24f), "the unchanged x as it was");
+    check(f.get<float>(kMoveYaw) == 0.75f, "a field the copied code did not touch: the game's own");
+    check(f.get<float>(kDisplacement) == 0.3f, "a read-only field: never written");
+}
+
+// --- The copied code, through the layer ---
+
+void entering_the_charge() {
+    Fake& f = fresh(kPal);
+    f.set(kDisplacement, 0.06f);
+    gc::Shim& s = gc::shim();
+    s.load();
+    check(hero_l00_set_action(gc::kGcCharge, 1) == 1, "entered");
+    s.flush();
+    check(s.charging() && f.get<std::int32_t>(kHeroState) == kHover, "the charge, in the hover");
+    check(near(f.get<float>(kVelocity), 0.06f), "his velocity is what he moved (COPY_VECTOR)");
+    check(gc::shim().drives_movement(), "the copied code moves him");
+}
+
+void the_double_tap_starts_a_charge() {
+    Fake& f = fresh();
+    start_charge(f);
+    check(gc::shim().charging(), "charging");
+    check(f.enters.size() == 1 && f.enters[0].first == kHover && f.enters[0].second == 1, "into the hover, forced");
+
+    f = fresh();
+    f.pad(true, true);
+    tick(f);
+    f.pad(false, false);
+    for (int i = 0; i < 30; ++i) {
+        tick(f);
+    }
+    f.pad(true, true);
+    tick(f);
+    check(!gc::shim().charging(), "30 frames late: no charge");
+
+    f = fresh();
+    gc::shim().set_owned(false);
+    start_charge(f);
+    check(!gc::shim().charging(), "not his: no charge");
+
+    f = fresh();
+    f.set(kControlMode, 0x7);
+    start_charge(f);
+    check(!gc::shim().charging(), "hurt: no charge");
+
+    f = fresh();
+    f.set(kVehicleMode, std::uint8_t{1});
+    start_charge(f);
+    check(!gc::shim().charging(), "in a vehicle: no charge");
+}
+
+void the_double_tap_window_is_half_a_second_on_pal() {
+    for (const int gap : {23, 26}) {
+        Fake& f = fresh(kPal);
+        f.pad(true, true);
+        tick(f);
+        f.pad(false, false);
+        for (int i = 0; i < gap; ++i) {
+            tick(f);
+        }
+        f.pad(true, true);
+        tick(f);
+        check(gc::shim().charging() == (gap == 23), "30 frames are 25 ticks at 50 a second");
+    }
+}
+
+void a_charge_tick_cruising() {
+    Fake& f = fresh();
+    start_charge(f);
+    f.set(kStateTimer, 100);
+    f.set(kStickX, 1.0f);
+    f.set(kStickMagnitude, 1.0f);
+    f.set(kGroundZ, 0.0f);
+    f.approaches.clear();
+    f.planars.clear();
+    move(f);
+    check(f.approaches.size() == 1 && near(f.approaches[0].first, 0.027777778f) &&
+              near(f.approaches[0].second, 0.004166667f),
+          "speed_step at Going Commando's rates");
+    check(f.planars.size() == 1 && f.planars[0] == 99999.0f, "set_planar_vel along his facing");
+    check(near(f.get<float>(kTargetSpeed), 0.19166668f), "the cruise's target speed");
+    const float turn = 0.020362178f * -0.17f;
+    check(near(f.get<float>(kFacing), turn, 1e-6f), "the stick right turns him right, eased in by 0.17");
+    check(near(f.lean(0x60), -turn * 27.0f, 1e-5f) && near(f.lean(0x278), turn * 13.5f, 1e-5f) &&
+              near(f.lean(0x1C8), turn * 13.5f, 1e-5f),
+          "the lean in the tilt records");
+    check(near(f.lean(0xA4), 0.017f) && near(f.lean(0xA8), 0.3f) && near(f.lean(2 * 0xB0 + 0xA4), 0.025f) &&
+              near(f.lean(3 * 0xB0 + 0xA8), 0.27f),
+          "the tilt springs (rac2-decomp's cam_set_limits_*)");
+    check(f.get<float>(kPos + 8) > 0.0f, "the ground spring lifts him toward 0.17");
+    check(f.sounds.size() == 1 && f.sounds[0].first == gc::kChargeSound && f.sounds[0].second, "the hum, looped");
+}
+
+void a_charge_tick_bursting_on_pal_at_a_faster_setting() {
+    Fake& f = fresh(kPal);
+    start_charge(f);
+    gc::shim().set_speed_scale(1.5f);
+    f.set(kStateTimer, 10);
+    f.set(kStickX, 1.0f);
+    f.set(kStickMagnitude, 1.0f);
+    f.approaches.clear();
+    move(f);
+    check(near(f.approaches.back().first, 0.027777778f * 1.44f), "rates times k squared");
+    check(near(f.get<float>(kTargetSpeed), 0.5f * 1.2f * 1.5f), "the burst's target: k times, and the setting's");
+    const float turn = 0.020362178f * -(0.17f * 1.2f) * 0.1f * 1.2f;
+    check(near(f.get<float>(kFacing), turn, 1e-6f), "a tenth of the turn in the burst, a tick's");
+}
+
+void the_charge_hits_what_is_ahead_once() {
+    Fake& f = fresh();
+    start_charge(f);
+    f.moby_ahead = 5;
+    f.set(kBodyCenter + 8, 0.5f);
+    move(f);
+    check(f.hits.size() == 1, "one hit for the moby the three lines meet");
+    if (!f.hits.empty()) {
+        check(f.hits[0].victim == 5 && f.hits[0].attacker == kSelf && f.hits[0].mask == 0x10000u &&
+                  f.hits[0].damage == 1.0f,
+              "the wrench's mask, damage 1, from him");
+    }
+    gc::shim().set_tick(kNtsc);
+    move(f);
+    check(f.hits.size() == 1, "not again within half a second");
+}
+
+void letting_go_of_r1_stops_it_after_61_frames() {
+    Fake& f = fresh(kPal);
+    start_charge(f);
+    f.set(kStateTimer, 45);
+    f.pad(false, false);
+    tick(f);
+    check(gc::shim().charging(), "before 61 frames, R1 let go does nothing");
+    f.pad(true, false);
+    f.set(kStateTimer, 51);
+    tick(f);
+    check(gc::shim().charging(), "R1 held: on");
+    f.set(kHoverLatch, std::uint8_t{1});
+    f.pad(false, false);
+    f.set(kStateTimer, 50);
+    tick(f);
+    check(!gc::shim().charging() && f.enters.back().first == kStop, "let go at 61 frames: the stop");
+    check(f.get<std::int32_t>(kMoveLockTimer) == 25, "30 frames before he moves: 25 ticks");
+    check(f.get<std::uint8_t>(kHoverLatch) == 0, "the hover's latch cleared");
+    check(f.stops == 1, "the hum stopped");
+}
+
+void other_ends_of_a_charge() {
+    Fake& f = fresh();
+    start_charge(f);
+    f.set(kMagnetFlag, std::int16_t{1});
+    tick(f);
+    check(!gc::shim().charging() && f.enters.back().first == kStop, "the Magneboots hold him: the stop");
+
+    f = fresh();
+    start_charge(f);
+    f.set(kItemAnim, std::uint8_t{1});
+    tick(f);
+    check(!gc::shim().charging() && f.enters.back().first == kStop, "changing weapon: the stop");
+
+    f = fresh();
+    start_charge(f);
+    f.set(kHeroState, 0x16);
+    tick(f);
+    check(!gc::shim().charging() && !gc::shim().drives_movement(), "taken out of the hover: over");
+}
+
+void a_wall_bonks_him_back() {
+    Fake& f = fresh();
+    start_charge(f);
+    f.set(kStateTimer, 100);
+    f.set(kGroundSpeed, 0.19f);
+    f.set(kFacing, 0.5f);
+    f.set(kWallHit, std::uint8_t{1});
+    f.set(kDisplacement, 0.01f);
+    tick(f);
+    check(!gc::shim().charging() && gc::shim().bonking() && f.enters.back().first == kWallBonk,
+          "into the wall slower than three quarters: the bonk");
+    check(near(f.get<float>(kGroundSpeed), 0.15f), "pushed back at 0.15 a frame");
+    check(gc::shim().drives_movement(), "the copied code moves him in the bonk");
+
+    f.turns.clear();
+    f.set(kStateTimer, 1);
+    f.set(kGroundDistance, 0.0f);
+    move(f);
+    const float away = 0.5f + kPi - 2.0f * kPi;
+    const float speed = 0.15f - 0.006666667f;
+    check(near(f.get<float>(kGroundSpeed), speed), "easing to a stop");
+    check(near(f.get<float>(kVelocity), std::cos(away) * speed) && near(f.get<float>(kVelocity + 4), std::sin(away) * speed),
+          "moving away from the wall");
+    check(f.turns.size() == 1 && near(f.turns[0][1], 0.05f) && near(f.turns[0][3], 0.2821616f), "turn_to to face it");
+    check(near(f.get<float>(kMoveYaw), 0.5f), "facing the wall he hit");
+
+    f = fresh();
+    start_charge(f);
+    f.set(kStateTimer, 100);
+    f.set(kWallHit, std::uint8_t{1});
+    f.set(kVelocity, 0.19f);
+    f.set(kDisplacement, 0.19f);
+    tick(f);
+    check(gc::shim().charging(), "a wall he slides along at speed: on");
+    f.wall_ahead = true;
+    tick(f);
+    check(gc::shim().bonking(), "a wall in reach ahead: the bonk");
+}
+
 }  // namespace
 
 int main() {
-    the_double_tap_needs_the_second_press_within_30_frames();
-    a_triple_tap_is_one_charge();
-    he_starts_on_his_feet_only();
-    the_charge_bursts_then_cruises();
-    the_charge_is_the_same_on_pal();
-    the_speed_setting_scales_the_targets();
-    the_stick_across_turns_him();
-    he_leans_into_the_turn();
-    r1_ends_it_after_61_frames();
-    the_wall_bonk();
     requests_for_the_hover();
     the_hover_does_not_end_a_charge_by_itself();
     ownership_comes_with_the_persuader_and_is_kept();
     a_moby_is_hit_once_a_half_second();
     angles_and_ticks();
-    if (failures == 0) {
-        std::printf("charge_boots: all passed\n");
+    states_and_animations_map();
+    the_field_table_is_sound();
+    load_translates_ratchets_hero();
+    flush_writes_back_only_what_changed();
+    entering_the_charge();
+    the_double_tap_starts_a_charge();
+    the_double_tap_window_is_half_a_second_on_pal();
+    a_charge_tick_cruising();
+    a_charge_tick_bursting_on_pal_at_a_faster_setting();
+    the_charge_hits_what_is_ahead_once();
+    letting_go_of_r1_stops_it_after_61_frames();
+    other_ends_of_a_charge();
+    a_wall_bonks_him_back();
+    if (failures != 0) {
+        std::printf("%d failed\n", failures);
+        return 1;
     }
-    return failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
+    std::printf("all passed\n");
+    return 0;
 }

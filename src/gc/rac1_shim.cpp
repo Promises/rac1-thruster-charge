@@ -134,6 +134,10 @@ void Shim::load() {
             } else if (f.unit == Unit::Frames) {
                 v = std::floor(v * m_k + 1e-3);
             }
+            // The `speed` setting undone (flush applies it), so the copied code sees its own speeds.
+            if (f.gc == kGcTargetSpeed && m_charging) {
+                v /= m_speed_scale;
+            }
             write_kind(copy, f.gc + i * size_of(f.gc_kind), f.gc_kind, v);
         }
     }
