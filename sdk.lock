@@ -1,0 +1,6 @@
+{
+  "about": "The OpenRAC mod SDK this mod builds against: tools/fetch_sdk.py puts it in .sdk/, where CMakeLists.txt finds it. Until an SDK release has the hook point this mod needs (rac1.player.steer_planar_velocity, declared in src/steer_hook.hpp until then), it is the SDK's source at a commit of OpenRAC's develop; back to a release's url and sha256 once one has it.",
+  "version": "1.23.0",
+  "git": "https://github.com/OpenRAC/OpenRAC",
+  "commit": "b4588cf86e531e909ee90ac83623fcef885c97f7"
+}

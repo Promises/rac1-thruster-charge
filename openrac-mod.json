@@ -1,0 +1,41 @@
+{
+  "format": 2,
+  "id": "charge-boots",
+  "name": "Charge Boots",
+  "version": "0.1.0",
+  "author": "Henning Berge",
+  "description": "Going Commando's Charge Boots in Ratchet & Clank: double-tap R1 and hold to charge along his facing, steering with the stick; enemies in the way are hit, a wall bonks him back. Takes over the Thruster-Pack's hover. Owned with the Persuader (Fred on Pokitaru), or from the start. Needs OpenRAC with the rac1.player.steer_planar_velocity hook point.",
+  "license": "MIT",
+  "homepage": "https://github.com/Promises/rac1-charge-boots",
+  "api": "1.23",
+  "games": {
+    "rac1": [
+      "pal",
+      "ntsc"
+    ]
+  },
+  "hooks": [
+    "rac1.player.update",
+    "rac1.player.enter_move_state",
+    "rac1.player.turn_to_heading"
+  ],
+  "settings": [
+    {
+      "key": "always_on",
+      "name": "Owned from the start",
+      "type": "bool",
+      "default": false,
+      "description": "Charge without the Persuader."
+    },
+    {
+      "key": "speed",
+      "name": "Speed",
+      "type": "float",
+      "default": 1.0,
+      "min": 0.5,
+      "max": 1.5,
+      "step": 0.05,
+      "description": "Times Going Commando's charge speeds (11.5 units a second, 30 in the first second)."
+    }
+  ]
+}
