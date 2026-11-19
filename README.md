@@ -14,8 +14,8 @@ The charge takes over the Thruster-Pack's double-tap R1 hover: with the mod on, 
 whatever the boots. The Thruster-Pack's long jump and its boost in a double jump stay.
 
 **Needs OpenRAC with the `rac1.player.steer_planar_velocity` hook point** (branch
-`rac1-steer-hook`, not in a release yet), and mod interface 1.23. A game without the hook point
-refuses the mod with the reason. It is built against the SDK's source at a commit of OpenRAC's
+`rac1-steer-hook`, not in a release yet), and mod interface 1.22 or later. A game without the
+hook point refuses the mod with the reason. It is built against the SDK's source at a commit of OpenRAC's
 `develop` (`sdk.lock`); the hook point is declared in `src/steer_hook.hpp` until the SDK has it.
 
 ## How it works

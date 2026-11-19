@@ -7,7 +7,7 @@
   "description": "Going Commando's Charge Boots in Ratchet & Clank: double-tap R1 and hold to charge along his facing, steering with the stick; enemies in the way are hit, a wall bonks him back. Takes over the Thruster-Pack's hover. Owned with the Persuader (Fred on Pokitaru), or from the start. Needs OpenRAC with the rac1.player.steer_planar_velocity hook point.",
   "license": "MIT",
   "homepage": "https://github.com/Promises/rac1-charge-boots",
-  "api": "1.23",
+  "api": "1.22",
   "games": {
     "rac1": [
       "pal",
