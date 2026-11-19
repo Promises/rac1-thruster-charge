@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 
 #include "../layout.hpp"
 
@@ -153,6 +154,14 @@ void Shim::load() {
 
     gc_shim_gravity_flag = m.read<std::uint8_t>(game.hero + kGravityMode);
     std::memcpy(gc_shim_pad + kPadHeld, m.base + game.pad + kPadHeld, 8);
+    // A double tap is one charge of charge_time: the copied decider sees R1 held for that long, then
+    // let go, whatever the pad does (it stops the charge on R1 let go after 61 frames).
+    if (m_charging && state == kGcCharge) {
+        std::uint32_t held = 0;
+        std::memcpy(&held, gc_shim_pad + kPadHeld, 4);
+        held = charge_holds_r1(copy.read<std::int32_t>(0x1B8), m_charge_frames) ? (held | kPadR1) : (held & ~kPadR1);
+        std::memcpy(gc_shim_pad + kPadHeld, &held, 4);
+    }
     const bool thruster = thruster_on();
     gc_shim_items_owned[kChargeBootsItem] = thruster ? 1 : 0;
     gc_shim_item_slots[3] = thruster ? kChargeBootsWorn : 0;
@@ -245,6 +254,8 @@ void Shim::reset() {
     m_timer_carry = 0.0f;
     gc_shim_double_tap_timer = 0;
     m_hits.clear();
+    // Each level's Ratchet has its own animations: their frames logged again.
+    m_pose_frames_logged = -1;
 }
 
 void Shim::end_charge() {
@@ -339,8 +350,17 @@ void Shim::play_animation(std::int32_t gc_animation, std::int32_t blend, float f
     const std::uint32_t hover = m.read<std::uint32_t>(sequences + static_cast<std::uint32_t>(kHoverAnimation) * 4);
     const auto count = pose != 0 ? static_cast<std::int32_t>(m.read<std::uint8_t>(pose + kSequenceFrameCount)) : 0;
     const std::pair<std::int32_t, std::int32_t> held = pose_frames(m_pose_from, m_pose_to, count);
-    // Going Commando's `blend` (0) is the start frame here: the pose's.
-    game.set_animation(animation, held.first, frames);
+    if (count != m_pose_frames_logged && game.info) {
+        m_pose_frames_logged = count;
+        char line[160];
+        std::snprintf(line, sizeof line,
+                      "Thruster Charge: the long jump's animation (0x26) has %d frames; the charge plays from %d "
+                      "and loops %d..%d",
+                      count, pose_start(held.first, held.second), held.first, held.second);
+        game.info(line);
+    }
+    // Going Commando's `blend` (0) is the start frame here: the first after the take-off.
+    game.set_animation(animation, pose_start(held.first, held.second), frames);
     // The hover's looping sound, not the long jump's.
     m.write(moby + kMobySound, hover != 0 ? m.read<std::uint8_t>(hover + kSequenceSound) : std::uint8_t{0xFF});
     m_pose_frozen = held.first == held.second;
@@ -427,7 +447,10 @@ bool Shim::item_input_allowed() const {
     if (m.base == nullptr || game.hero == 0) {
         return false;
     }
-    return thruster_on() && m.read<std::uint8_t>(game.hero + kVehicleMode) == 0 &&
+    // The stop's lockout (Going Commando's 30 frames, +0x1E0 here Ratchet & Clank's move_lock_timer):
+    // no new charge until it has run out.
+    return thruster_on() && m.read<std::int32_t>(game.hero + kMoveLockTimer) == 0 &&
+           m.read<std::uint8_t>(game.hero + kVehicleMode) == 0 &&
            m.read<std::uint8_t>(game.hero + kGravityMode) == 0 && m.read<std::int16_t>(game.hero + kMagnetFlag) == 0;
 }
 

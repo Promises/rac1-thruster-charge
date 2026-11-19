@@ -85,6 +85,7 @@ std::int32_t hero_state(const openrac::Memory& m) { return m.read<std::int32_t>(
 void read_settings(openrac::Mod& mod) {
     layer().set_speed_scale(mod.setting<float>("speed"));
     layer().set_pose(mod.setting<std::int32_t>("pose_loop_from"), mod.setting<std::int32_t>("pose_loop_to"));
+    layer().set_charge_time(mod.setting<float>("charge_time"));
 }
 
 // The game as the translation layer reaches it in the level loaded now: each level has its own
@@ -172,6 +173,7 @@ void connect_once(openrac::Mod& mod) {
     g.sound_play = [m](std::int32_t sound, bool loop) { return m->hero_sound_play(sound, loop); };
     g.sound_stop = [m](std::int32_t voice) { m->hero_sound_stop(voice); };
     g.log = [m](const char* what) { m->warn(what); };
+    g.info = [m](const char* what) { m->info(what); };
 }
 
 void before_update() {
@@ -308,9 +310,9 @@ void load(openrac::Mod& mod) {
         mod.on_settings([] { read_settings(*state().mod); });
     }
 
-    mod.info("Thruster Charge: with the Thruster-Pack on, double-tap R1 and hold to charge (Going Commando's Charge Boots code)");
+    mod.info("Thruster Charge: with the Thruster-Pack on, double-tap R1 to charge (Going Commando's Charge Boots code)");
 }
 
 }  // namespace
 
-OPENRAC_MOD_CPP("thruster-charge", "0.5.1", load)
+OPENRAC_MOD_CPP("thruster-charge", "0.6.0", load)

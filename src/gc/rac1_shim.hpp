@@ -25,6 +25,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -128,18 +129,27 @@ inline std::int32_t rac1_animation(std::int32_t gc) {
 }
 
 // The long jump is one jump: its animation plays once, then wraps to its first frame
-// (advance_hero_animation, hero_mapped_animations.c:474-...); its flight is about its apex (the
-// state's apex_anim_frame 18, hero_vehicle_and_collision.c:1798). A charge lasts seconds, so the
-// pose is held there: set_hero_animation starts it at frame `from` (its second argument is the
-// start frame: it writes Moby.prev_frame, +0x51), and then
-//  - from == to: frozen there, Hero.anim_speed (+0xA90, by which advance_hero_animation moves the
-//    frame once the blend into it is done) held at 0 while he charges;
-//  - from < to: looped between them by hero_queue_sequence (hero_mapped_animations.c:428-437; the
-//    game jumps back with a slow first frame, so not seamless).
-// Both are the settings pose_loop_from and pose_loop_to, clamped to the animation's frames
-// (AnimSeq.frame_count, +0x10). By default frozen at the apex: not seen yet, to be tuned.
-constexpr std::int32_t kChargePoseFrom = 18;
-constexpr std::int32_t kChargePoseTo = 18;
+// (advance_hero_animation, hero_mapped_animations.c:474-...). Its state's own numbers place the
+// parts of it (HeroEnterMoveState, hero_vehicle_and_collision.c:1795-1806, and its movement,
+// hero_water_and_ground_motion.c:2520-2540): the take-off until about frame 8 (its hits start 8
+// ticks in, once he is off the ground), the apex at 18, its hits until 28, the landing's target at
+// 30. A charge lasts longer than that, so it plays the middle only:
+//  - set_hero_animation starts it at kChargePoseStart, the first frame after the take-off (its
+//    second argument is the start frame: it writes Moby.prev_frame, +0x51);
+//  - it then loops pose_loop_from..pose_loop_to (default 12..24, about the apex, short of the hits'
+//    end at 28 and the landing) by Ratchet & Clank's own hero_queue_sequence
+//    (hero_mapped_animations.c:428-437). Past `to`, advance_hero_animation blends back to `from`
+//    over three ticks (it sets the frame rate to a third for that frame): the smoothest jump back
+//    the game has. Wrapping the frame by hand would snap in one tick, and the advance cannot play
+//    a sequence backwards, so no ping-pong.
+//  - hero_queue_sequence refuses a `to` the animation does not have (it compares with its
+//    AnimSeq.frame_count, +0x10), and the animation then plays to its end and starts over: so both
+//    are clamped to its frames, which the mod logs once for tuning.
+// from == to holds that one frame still instead (Hero.anim_speed, +0xA90, at 0 while he charges).
+// These numbers are the long jump state's, in its anim_frame; not seen in this animation yet.
+constexpr std::int32_t kChargePoseStart = 8;
+constexpr std::int32_t kChargePoseFrom = 12;
+constexpr std::int32_t kChargePoseTo = 24;
 
 // The frames to hold for the settings, in an animation of `frame_count` frames: both within it,
 // to no earlier than from. frame_count 0 (unknown): as asked.
@@ -153,6 +163,32 @@ inline std::pair<std::int32_t, std::int32_t> pose_frames(std::int32_t from, std:
     }
     return {from, std::max(from, to)};
 }
+
+// The frame the charge's animation starts at: kChargePoseStart, but not past the loop's start; a
+// frame held still, that frame.
+inline std::int32_t pose_start(std::int32_t from, std::int32_t to) {
+    return from == to ? from : std::min(kChargePoseStart, from);
+}
+
+// The charge's length. Going Commando's charge stops once R1 is let go and it has lasted 61 frames
+// (hero_l00_decide_state: `!(R1 held) && frames >= 0x3D`): a double tap let go at once gives
+// exactly 61 frames, its burst (0.5 a frame for 60 frames) and one frame of the cruise. Here a
+// double tap is always that tap: the copied decider sees R1 held for charge_time, then let go, so
+// the charge lasts charge_time, and never less than those 61 frames, which Going Commando cannot
+// stop sooner.
+constexpr std::int32_t kGcMinChargeFrames = 0x3D;
+constexpr float kChargeTimeDefault = kGcMinChargeFrames / 60.0f;
+
+// The charge's length in Going Commando's frames for a charge_time in seconds.
+inline std::int32_t charge_frames(float seconds) {
+    if (!std::isfinite(seconds)) {
+        return kGcMinChargeFrames;
+    }
+    return std::max(kGcMinChargeFrames, static_cast<std::int32_t>(std::lround(seconds * 60.0f)));
+}
+
+// Whether the copied decider is to see R1 held: while the charge is shorter than its length.
+inline bool charge_holds_r1(std::int32_t frames, std::int32_t length) { return frames < length; }
 
 // What an animation brings besides its pose (advance_hero_animation): a looping sound of its own
 // (its AnimSeq +0x11, which set_hero_animation puts in Moby +0x7C and the advance keeps playing)
@@ -365,6 +401,8 @@ struct Game {
     std::function<std::int32_t(std::int32_t sound, bool loop)> sound_play;
     std::function<void(std::int32_t voice)> sound_stop;
     std::function<void(const char*)> log;
+    // A note for the player's log (not a warning).
+    std::function<void(const char*)> info;
     // set_hero_animation(animation, blend, frames) and hero_queue_sequence(from, to), Ratchet &
     // Clank's own (mod.cpp finds them by name).
     std::function<void(std::int32_t animation, std::int32_t blend, float frames)> set_animation;
@@ -423,6 +461,8 @@ public:
     void play_animation(std::int32_t gc_animation, std::int32_t blend, float frames);
     // The charge's pose settings (frames of the long jump's animation; from == to: frozen).
     void set_pose(std::int32_t from, std::int32_t to);
+    // The charge's length (charge_time, seconds).
+    void set_charge_time(float seconds) { m_charge_frames = charge_frames(seconds); }
     // Each tick of a charge, after the copied movement: the pose held, the long jump's sounds off.
     void hold_pose();
     // Going Commando's frame timer decremented by a tick (math_fast_float_d).
@@ -466,6 +506,9 @@ private:
     // The pose being held (and frozen), since the charge's animation started.
     bool m_pose = false;
     bool m_pose_frozen = false;
+    // The long jump animation's frame count last logged (-1: none yet).
+    std::int32_t m_pose_frames_logged = -1;
+    std::int32_t m_charge_frames = kGcMinChargeFrames;
 };
 
 Shim& shim();
