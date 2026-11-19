@@ -106,7 +106,6 @@ Fake& fresh(float frame_time = kNtsc) {
     g_fake = &fake;
     s.set_speed_scale(1.0f);
     s.set_pose(gc::kChargePoseFrom, gc::kChargePoseTo);
-    s.set_charge_time(gc::kChargeTimeDefault);
     s.set_tick(frame_time);
     std::memset(gc_shim_hero, 0, gc::kHeroBytes);
     std::memset(gc_shim_lean, 0, gc::kLeanBytes);
@@ -169,13 +168,13 @@ Fake& fresh(float frame_time = kNtsc) {
     fake.set(kControlMode, kModeIdle);
     fake.set(kGroundedFrames, 10);
     fake.set(kCapsuleRadius, 0.5f);
-    // His moby, its class, and two of its animations: the long jump's (30 frames, its own looping
+    // His moby, its class, and two of its animations: the long jump's (14 frames, its own looping
     // sound 0x55) and the hover's (sound 0x33).
     fake.set(kMoby, kFakeMoby);
     fake.mem().write(kFakeMoby + gc::kMobyClass, kFakeClass);
     fake.mem().write(kFakeClass + gc::kClassSequences + gc::kChargePose * 4, kFakeLongJump);
     fake.mem().write(kFakeClass + gc::kClassSequences + gc::kHoverAnimation * 4, kFakeHover);
-    fake.mem().write(kFakeLongJump + gc::kSequenceFrameCount, std::uint8_t{30});
+    fake.mem().write(kFakeLongJump + gc::kSequenceFrameCount, std::uint8_t{14});
     fake.mem().write(kFakeLongJump + gc::kSequenceSound, std::uint8_t{0x55});
     fake.mem().write(kFakeHover + gc::kSequenceSound, std::uint8_t{0x33});
     fake.set(gc::kHeroAnimSpeed, 1.0f);
@@ -517,41 +516,27 @@ void the_charge_hits_what_is_ahead_once() {
     check(f.hits.size() == 1, "not again within half a second");
 }
 
-void a_double_tap_is_one_charge_of_its_length() {
-    check(gc::charge_frames(gc::kChargeTimeDefault) == 61, "by default Going Commando's tap charge: 61 frames");
-    check(gc::charge_frames(2.0f) == 120 && gc::charge_frames(0.2f) == 61 && gc::charge_frames(NAN) == 61,
-          "seconds to frames, never under 61");
-    check(gc::charge_holds_r1(60, 61) && !gc::charge_holds_r1(61, 61), "R1 held for the decider until the length");
-
+void holding_r1_keeps_it_going_and_letting_go_stops_it_after_61_frames() {
     Fake& f = fresh(kPal);
     start_charge(f);
-    f.set(kStateTimer, 49);
+    f.set(kStateTimer, 45);
+    f.pad(false, false);
     tick(f);
-    check(gc::shim().charging(), "R1 held: on until 61 frames (50 ticks)");
+    check(gc::shim().charging(), "before 61 frames, R1 let go does nothing");
+    f.pad(true, false);
+    f.set(kStateTimer, 51);
+    tick(f);
+    check(gc::shim().charging(), "R1 held at 61 frames: on");
+    f.set(kStateTimer, 1000);
+    tick(f);
+    check(gc::shim().charging(), "held: on as long as he holds it");
     f.set(kHoverLatch, std::uint8_t{1});
+    f.pad(false, false);
     tick(f);
-    check(!gc::shim().charging() && f.enters.back().first == kStop, "at 61 frames: the stop, R1 still held");
+    check(!gc::shim().charging() && f.enters.back().first == kStop, "let go after 61 frames: the stop");
     check(f.get<std::int32_t>(kMoveLockTimer) == 25, "30 frames before he moves: 25 ticks");
     check(f.get<std::uint8_t>(kHoverLatch) == 0, "the hover's latch cleared");
     check(f.stops == 1, "the hum stopped");
-
-    f = fresh();
-    start_charge(f);
-    f.pad(false, false);
-    f.set(kStateTimer, 30);
-    tick(f);
-    check(gc::shim().charging(), "R1 let go at once: still on");
-
-    f = fresh();
-    gc::shim().set_charge_time(2.0f);
-    start_charge(f);
-    f.pad(false, false);
-    f.set(kStateTimer, 100);
-    tick(f);
-    check(gc::shim().charging(), "two seconds: on at 101 frames, R1 let go");
-    f.set(kStateTimer, 119);
-    tick(f);
-    check(!gc::shim().charging() && f.enters.back().first == kStop, "and stopped at 120");
 }
 
 void another_charge_after_the_lockout() {
@@ -634,55 +619,56 @@ void a_wall_bonks_him_back() {
 }
 
 void pose_frames_are_clamped() {
-    check(gc::pose_frames(12, 24, 30) == std::make_pair(12, 24), "the default loop");
-    check(gc::pose_frames(12, 40, 20) == std::make_pair(12, 19), "past the end: to its last frame");
-    check(gc::pose_frames(40, 50, 30) == std::make_pair(29, 29), "both past it: its last, held");
-    check(gc::pose_frames(20, 10, 30) == std::make_pair(20, 20), "backwards: held at the first");
+    check(gc::pose_frames(4, 9, 14) == std::make_pair(4, 9), "the default loop");
+    check(gc::pose_frames(12, 24, 14) == std::make_pair(12, 13), "past the end: to its last frame");
+    check(gc::pose_frames(40, 50, 14) == std::make_pair(13, 13), "both past it: its last, held");
+    check(gc::pose_frames(9, 4, 14) == std::make_pair(9, 9), "backwards: held at the first");
     check(gc::pose_frames(-3, 5, 0) == std::make_pair(0, 5), "frames unknown: as asked, from 0");
-    check(gc::pose_start(12, 24) == 8 && gc::pose_start(4, 24) == 4 && gc::pose_start(18, 18) == 18,
-          "it starts after the take-off, not past the loop; a held frame, there");
 }
 
 void the_charge_loops_the_long_jumps_flight() {
     Fake& f = fresh();
     start_charge(f);
-    check(f.animations.size() == 1 && f.animations[0].id == gc::kChargePose && f.animations[0].start == 8 &&
+    check(f.animations.size() == 1 && f.animations[0].id == gc::kChargePose && f.animations[0].start == 4 &&
               f.animations[0].frames == -2.0f,
-          "the long jump's animation from the frame after its take-off, on Going Commando's blend curve");
-    check(f.loops.size() == 1 && f.loops[0].first == 12 && f.loops[0].second == 24, "its flight looped, 12..24");
-    check(f.infos.size() == 1 && f.infos[0].find("has 30 frames") != std::string::npos, "its frames logged");
+          "the long jump's animation from the loop's first frame, on Going Commando's blend curve");
+    check(f.loops.size() == 1 && f.loops[0].first == 4 && f.loops[0].second == 9, "its flight looped, 4..9");
+    check(f.infos.size() == 1 && f.infos[0].find("has 14 frames") != std::string::npos, "its frames logged");
     const gc::Memory m = f.mem();
     check(m.read<std::uint8_t>(kFakeMoby + gc::kMobySound) == 0x33, "the hover's looping sound, not the long jump's");
     check(f.get<float>(gc::kHeroAnimSpeed) == 1.0f, "playing, not held");
     m.write(kFakeMoby + gc::kMobyTriggers, std::uint8_t{4});
-    for (int i = 0; i < 30; ++i) {
+    for (int i = 0; i < 600; ++i) {
         tick(f);
     }
-    check(f.animations.size() == 1 && f.loops.size() == 1, "not started again while he charges");
+    check(gc::shim().charging(), "ten seconds held: still charging");
+    check(f.animations.size() == 1 && f.loops.size() == 1, "and never started again: the loop stays");
     check(m.read<std::uint8_t>(kFakeMoby + gc::kMobyTriggers) == 0, "no long jump sounds at its frames");
     check(f.sounds.size() == 1 && f.sounds[0].first == gc::kChargeSound && f.stops == 0, "one hum, for all of it");
-    f.set(kStateTimer, 60);
+    f.pad(false, false);
     tick(f);
-    check(!gc::shim().charging() && f.stops == 1, "61 frames on: stopped, the hum with it");
+    check(!gc::shim().charging() && f.stops == 1, "let go: stopped, the hum with it");
     f.set(kMoveLockTimer, 0);
     f.set(kHeroState, kIdle);
     start_charge(f);
     check(gc::shim().charging() && f.infos.size() == 1, "the frames logged once a level");
 
     f = fresh();
-    gc::shim().set_pose(18, 18);
+    gc::shim().set_pose(6, 6);
     start_charge(f);
-    check(f.animations.size() == 1 && f.animations[0].start == 18 && f.loops.empty() &&
+    check(f.animations.size() == 1 && f.animations[0].start == 6 && f.loops.empty() &&
               f.get<float>(gc::kHeroAnimSpeed) == 0.0f,
           "one frame: held still there");
     f.set(kStateTimer, 70);
+    f.pad(false, false);
     tick(f);
     check(!gc::shim().charging() && f.get<float>(gc::kHeroAnimSpeed) == 1.0f, "let go after it");
 
     f = fresh();
-    gc::shim().set_pose(40, 50);
+    gc::shim().set_pose(12, 24);
     start_charge(f);
-    check(f.animations.size() == 1 && f.animations[0].start == 29 && f.loops.empty(), "past its 30 frames: its last");
+    check(f.animations.size() == 1 && f.animations[0].start == 12 && f.loops.size() == 1 && f.loops[0].second == 13,
+          "past its 14 frames: to its last, so the game takes the loop");
 
     f = fresh();
     start_charge(f);
@@ -762,7 +748,7 @@ int main() {
     a_charge_tick_cruising();
     a_charge_tick_bursting_on_pal_at_a_faster_setting();
     the_charge_hits_what_is_ahead_once();
-    a_double_tap_is_one_charge_of_its_length();
+    holding_r1_keeps_it_going_and_letting_go_stops_it_after_61_frames();
     another_charge_after_the_lockout();
     other_ends_of_a_charge();
     a_wall_bonks_him_back();

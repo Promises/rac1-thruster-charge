@@ -154,14 +154,6 @@ void Shim::load() {
 
     gc_shim_gravity_flag = m.read<std::uint8_t>(game.hero + kGravityMode);
     std::memcpy(gc_shim_pad + kPadHeld, m.base + game.pad + kPadHeld, 8);
-    // A double tap is one charge of charge_time: the copied decider sees R1 held for that long, then
-    // let go, whatever the pad does (it stops the charge on R1 let go after 61 frames).
-    if (m_charging && state == kGcCharge) {
-        std::uint32_t held = 0;
-        std::memcpy(&held, gc_shim_pad + kPadHeld, 4);
-        held = charge_holds_r1(copy.read<std::int32_t>(0x1B8), m_charge_frames) ? (held | kPadR1) : (held & ~kPadR1);
-        std::memcpy(gc_shim_pad + kPadHeld, &held, 4);
-    }
     const bool thruster = thruster_on();
     gc_shim_items_owned[kChargeBootsItem] = thruster ? 1 : 0;
     gc_shim_item_slots[3] = thruster ? kChargeBootsWorn : 0;
@@ -356,11 +348,11 @@ void Shim::play_animation(std::int32_t gc_animation, std::int32_t blend, float f
         std::snprintf(line, sizeof line,
                       "Thruster Charge: the long jump's animation (0x26) has %d frames; the charge plays from %d "
                       "and loops %d..%d",
-                      count, pose_start(held.first, held.second), held.first, held.second);
+                      count, held.first, held.first, held.second);
         game.info(line);
     }
-    // Going Commando's `blend` (0) is the start frame here: the first after the take-off.
-    game.set_animation(animation, pose_start(held.first, held.second), frames);
+    // Going Commando's `blend` (0) is the start frame here: the loop's first, past the take-off.
+    game.set_animation(animation, held.first, frames);
     // The hover's looping sound, not the long jump's.
     m.write(moby + kMobySound, hover != 0 ? m.read<std::uint8_t>(hover + kSequenceSound) : std::uint8_t{0xFF});
     m_pose_frozen = held.first == held.second;
