@@ -1,6 +1,6 @@
 # Third-party notices
 
-Charge Boots is licensed under the GNU General Public License version 3 ([LICENSE](LICENSE)).
+Thruster Charge is licensed under the GNU General Public License version 3 ([LICENSE](LICENSE)).
 The mod's own files are GPL-3.0-or-later; the files copied from Going Commando's decompilation
 are under that project's license, the GPL version 3 (it names no later version, so they are
 GPL-3.0-only). Each file says which in its `SPDX-License-Identifier` line.
@@ -15,7 +15,7 @@ GPL-3.0-only). Each file says which in its `SPDX-License-Identifier` line.
   `d46a3539` (2026-10-11); code from then keeps that notice, reproduced below.
 - Target: Ratchet & Clank: Going Commando, USA v1.01.
 
-Copied, unchanged but for the lines marked `(charge-boots)` that cut each function down to the
+Copied, unchanged but for the lines marked `(thruster-charge)` that cut each function down to the
 charge's cases (each file's header lists the exact lines):
 
 | File here | Function | rac2-decomp file and lines | USA v1.01 | USA v2.00 |
