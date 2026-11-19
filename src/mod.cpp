@@ -82,7 +82,10 @@ gc::Shim& layer() { return gc::shim(); }
 
 std::int32_t hero_state(const openrac::Memory& m) { return m.read<std::int32_t>(state().disc.hero + tc::kHeroState); }
 
-void read_settings(openrac::Mod& mod) { layer().set_speed_scale(mod.setting<float>("speed")); }
+void read_settings(openrac::Mod& mod) {
+    layer().set_speed_scale(mod.setting<float>("speed"));
+    layer().set_pose(mod.setting<std::int32_t>("pose_loop_from"), mod.setting<std::int32_t>("pose_loop_to"));
+}
 
 // The game as the translation layer reaches it in the level loaded now: each level has its own
 // build of the hero's functions (the hook points' entries) and its own tilt records.
@@ -236,6 +239,9 @@ void load(openrac::Mod& mod) {
         l.load();
         hero_l00_update_state_machine();
         l.flush();
+        if (l.charging()) {
+            l.hold_pose();
+        }
     });
 
     // The blue flames. The flame's update and draw: the tint on around them while he charges.
@@ -307,4 +313,4 @@ void load(openrac::Mod& mod) {
 
 }  // namespace
 
-OPENRAC_MOD_CPP("thruster-charge", "0.5.0", load)
+OPENRAC_MOD_CPP("thruster-charge", "0.5.1", load)

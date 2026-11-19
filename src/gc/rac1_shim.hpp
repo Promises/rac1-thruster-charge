@@ -23,11 +23,13 @@
 // Nothing here includes the SDK: mod.cpp fills Game from it, and the tests from a fake.
 #pragma once
 
+#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
 #include <functional>
+#include <utility>
 
 #include "../thruster_charge.hpp"
 
@@ -125,15 +127,48 @@ inline std::int32_t rac1_animation(std::int32_t gc) {
     return -1;
 }
 
-// The long jump is one jump: its animation plays once (its takeoff, flight and landing over about 40
-// frames; its own hits stop at frame 28, hero_water_and_ground_motion.c:2526-2528, and its flight
-// is from the apex frame 18 toward 30, hero_vehicle_and_collision.c:1798-1800). A charge lasts
-// seconds: the pose holds in the flight between these frames, looped by Ratchet & Clank's own
-// hero_queue_sequence (hero_mapped_animations.c:428-437: past frame `to` the animation goes back to
-// `from`, advance_hero_animation, hero_mapped_animations.c). Picked from those numbers, not seen:
-// to be tuned in the game.
-constexpr std::int32_t kChargePoseLoopFrom = 20;
-constexpr std::int32_t kChargePoseLoopTo = 24;
+// The long jump is one jump: its animation plays once, then wraps to its first frame
+// (advance_hero_animation, hero_mapped_animations.c:474-...); its flight is about its apex (the
+// state's apex_anim_frame 18, hero_vehicle_and_collision.c:1798). A charge lasts seconds, so the
+// pose is held there: set_hero_animation starts it at frame `from` (its second argument is the
+// start frame: it writes Moby.prev_frame, +0x51), and then
+//  - from == to: frozen there, Hero.anim_speed (+0xA90, by which advance_hero_animation moves the
+//    frame once the blend into it is done) held at 0 while he charges;
+//  - from < to: looped between them by hero_queue_sequence (hero_mapped_animations.c:428-437; the
+//    game jumps back with a slow first frame, so not seamless).
+// Both are the settings pose_loop_from and pose_loop_to, clamped to the animation's frames
+// (AnimSeq.frame_count, +0x10). By default frozen at the apex: not seen yet, to be tuned.
+constexpr std::int32_t kChargePoseFrom = 18;
+constexpr std::int32_t kChargePoseTo = 18;
+
+// The frames to hold for the settings, in an animation of `frame_count` frames: both within it,
+// to no earlier than from. frame_count 0 (unknown): as asked.
+inline std::pair<std::int32_t, std::int32_t> pose_frames(std::int32_t from, std::int32_t to, std::int32_t frame_count) {
+    if (frame_count > 0) {
+        from = std::clamp(from, 0, frame_count - 1);
+        to = std::clamp(to, 0, frame_count - 1);
+    } else {
+        from = std::max(from, 0);
+        to = std::max(to, 0);
+    }
+    return {from, std::max(from, to)};
+}
+
+// What an animation brings besides its pose (advance_hero_animation): a looping sound of its own
+// (its AnimSeq +0x11, which set_hero_animation puts in Moby +0x7C and the advance keeps playing)
+// and sounds at frames (its AnimSeq +0x12 triggers, which the advance copies to Moby +0x7E when it
+// takes the animation up and plays as the frames pass them). The long jump's are a jump's. The
+// charge keeps the hover's instead, as up to 0.3.0: the hover animation's (0x13) looping sound in
+// +0x7C, no triggers (+0x7E held at 0), and the hover's hum (kChargeSound, Shim::keep_sound).
+constexpr std::int32_t kHoverAnimation = 0x13;
+constexpr std::uint32_t kMobyClass = 0x24;
+constexpr std::uint32_t kClassSequences = 0x48;
+constexpr std::uint32_t kSequenceFrameCount = 0x10;
+constexpr std::uint32_t kSequenceSound = 0x11;
+constexpr std::uint32_t kMobyStartFrame = 0x51;
+constexpr std::uint32_t kMobySound = 0x7C;
+constexpr std::uint32_t kMobyTriggers = 0x7E;
+constexpr std::uint32_t kHeroAnimSpeed = 0xA90;
 
 // The Thruster-Pack's flames (class 0xA7 mobys, thruster_pack_flame_update, visibomb_and_pyrocitor.c:
 // 897-1000) show in the hover, so during the charge. Each draws its flame in
@@ -386,6 +421,10 @@ public:
     void keep_sound();
     // Going Commando's animation in Ratchet & Clank's terms (gc_shim_set_hero_animation).
     void play_animation(std::int32_t gc_animation, std::int32_t blend, float frames);
+    // The charge's pose settings (frames of the long jump's animation; from == to: frozen).
+    void set_pose(std::int32_t from, std::int32_t to);
+    // Each tick of a charge, after the copied movement: the pose held, the long jump's sounds off.
+    void hold_pose();
     // Going Commando's frame timer decremented by a tick (math_fast_float_d).
     std::int32_t step_frame_timer(std::int32_t* timer);
     // Whether the hero's items' input runs (ProcessHeroEquippedItemInput's early returns): his feet
@@ -422,6 +461,11 @@ private:
     // The ribbon's colours as they were, and where (0: not tinted).
     std::array<std::uint32_t, kRibbonColours> m_ribbon_saved{};
     std::uint32_t m_ribbon_tinted = 0;
+    std::int32_t m_pose_from = kChargePoseFrom;
+    std::int32_t m_pose_to = kChargePoseTo;
+    // The pose being held (and frozen), since the charge's animation started.
+    bool m_pose = false;
+    bool m_pose_frozen = false;
 };
 
 Shim& shim();

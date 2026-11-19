@@ -257,6 +257,14 @@ void Shim::end_charge() {
     }
     m_voice = -1;
     untint_flames();
+    // The pose let go: the next state's animation sets the speed again; one that does not finds
+    // the game's own 1.
+    if (m_pose && m_pose_frozen && game.memory.base != nullptr &&
+        game.memory.read<float>(game.hero + kHeroAnimSpeed) == 0.0f) {
+        game.memory.write(game.hero + kHeroAnimSpeed, 1.0f);
+    }
+    m_pose = false;
+    m_pose_frozen = false;
 }
 
 std::int32_t Shim::enter_state(std::int32_t gc_action) {
@@ -317,9 +325,48 @@ void Shim::play_animation(std::int32_t gc_animation, std::int32_t blend, float f
     }
     // Going Commando's frames are Ratchet & Clank's: below 0 a blend curve (the hover's entry passes
     // -2 too), above it a time in frames.
-    game.set_animation(animation, blend, frames);
-    if (animation == kChargePose && game.loop_animation) {
-        game.loop_animation(kChargePoseLoopFrom, kChargePoseLoopTo);
+    if (animation != kChargePose) {
+        game.set_animation(animation, blend, frames);
+        return;
+    }
+    const Memory& m = game.memory;
+    const std::uint32_t moby = m.read<std::uint32_t>(game.hero + kMoby);
+    if (moby == 0) {
+        return;
+    }
+    const std::uint32_t sequences = m.read<std::uint32_t>(moby + kMobyClass) + kClassSequences;
+    const std::uint32_t pose = m.read<std::uint32_t>(sequences + static_cast<std::uint32_t>(kChargePose) * 4);
+    const std::uint32_t hover = m.read<std::uint32_t>(sequences + static_cast<std::uint32_t>(kHoverAnimation) * 4);
+    const auto count = pose != 0 ? static_cast<std::int32_t>(m.read<std::uint8_t>(pose + kSequenceFrameCount)) : 0;
+    const std::pair<std::int32_t, std::int32_t> held = pose_frames(m_pose_from, m_pose_to, count);
+    // Going Commando's `blend` (0) is the start frame here: the pose's.
+    game.set_animation(animation, held.first, frames);
+    // The hover's looping sound, not the long jump's.
+    m.write(moby + kMobySound, hover != 0 ? m.read<std::uint8_t>(hover + kSequenceSound) : std::uint8_t{0xFF});
+    m_pose_frozen = held.first == held.second;
+    if (!m_pose_frozen && game.loop_animation) {
+        game.loop_animation(held.first, held.second);
+    }
+    m_pose = true;
+    hold_pose();
+}
+
+void Shim::set_pose(std::int32_t from, std::int32_t to) {
+    m_pose_from = from;
+    m_pose_to = to;
+}
+
+void Shim::hold_pose() {
+    if (!m_pose || game.memory.base == nullptr) {
+        return;
+    }
+    const Memory& m = game.memory;
+    const std::uint32_t moby = m.read<std::uint32_t>(game.hero + kMoby);
+    if (moby != 0) {
+        m.write(moby + kMobyTriggers, std::uint8_t{0});
+    }
+    if (m_pose_frozen) {
+        m.write(game.hero + kHeroAnimSpeed, 0.0f);
     }
 }
 

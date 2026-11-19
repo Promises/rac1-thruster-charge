@@ -49,6 +49,10 @@ constexpr std::uint32_t kGroundZ = 0x2D8;
 constexpr std::uint32_t kItemAnim = 0x20A8;
 constexpr std::int32_t kSelf = 0;
 constexpr std::int32_t kHeliPack = 2;
+constexpr std::uint32_t kFakeMoby = 0x1A0000;
+constexpr std::uint32_t kFakeClass = 0x1A1000;
+constexpr std::uint32_t kFakeLongJump = 0x1A2000;
+constexpr std::uint32_t kFakeHover = 0x1A2100;
 
 struct Fake {
     std::vector<std::uint8_t> memory = std::vector<std::uint8_t>(0x200000);
@@ -59,7 +63,12 @@ struct Fake {
     std::vector<std::pair<std::int32_t, std::int32_t>> enters;
     std::vector<gc::Hit> hits;
     std::vector<std::pair<std::int32_t, bool>> sounds;
-    std::vector<std::pair<std::int32_t, float>> animations;
+    struct Animation {
+        std::int32_t id;
+        std::int32_t start;
+        float frames;
+    };
+    std::vector<Animation> animations;
     std::vector<std::pair<std::int32_t, std::int32_t>> loops;
     int stops = 0;
     std::int32_t moby_ahead = -1;
@@ -94,6 +103,7 @@ Fake& fresh(float frame_time = kNtsc) {
     fake = Fake{};
     g_fake = &fake;
     s.set_speed_scale(1.0f);
+    s.set_pose(gc::kChargePoseFrom, gc::kChargePoseTo);
     s.set_tick(frame_time);
     std::memset(gc_shim_hero, 0, gc::kHeroBytes);
     std::memset(gc_shim_lean, 0, gc::kLeanBytes);
@@ -143,8 +153,8 @@ Fake& fresh(float frame_time = kNtsc) {
     };
     g.sound_stop = [](std::int32_t) { ++g_fake->stops; };
     g.log = [](const char* what) { std::printf("layer: %s\n", what); };
-    g.set_animation = [](std::int32_t animation, std::int32_t, float frames) {
-        g_fake->animations.emplace_back(animation, frames);
+    g.set_animation = [](std::int32_t animation, std::int32_t start, float frames) {
+        g_fake->animations.push_back({animation, start, frames});
     };
     g.loop_animation = [](std::int32_t from, std::int32_t to) { g_fake->loops.emplace_back(from, to); };
     g.ribbon = fake.disc.ribbon_l00;
@@ -155,6 +165,16 @@ Fake& fresh(float frame_time = kNtsc) {
     fake.set(kControlMode, kModeIdle);
     fake.set(kGroundedFrames, 10);
     fake.set(kCapsuleRadius, 0.5f);
+    // His moby, its class, and two of its animations: the long jump's (30 frames, its own looping
+    // sound 0x55) and the hover's (sound 0x33).
+    fake.set(kMoby, kFakeMoby);
+    fake.mem().write(kFakeMoby + gc::kMobyClass, kFakeClass);
+    fake.mem().write(kFakeClass + gc::kClassSequences + gc::kChargePose * 4, kFakeLongJump);
+    fake.mem().write(kFakeClass + gc::kClassSequences + gc::kHoverAnimation * 4, kFakeHover);
+    fake.mem().write(kFakeLongJump + gc::kSequenceFrameCount, std::uint8_t{30});
+    fake.mem().write(kFakeLongJump + gc::kSequenceSound, std::uint8_t{0x55});
+    fake.mem().write(kFakeHover + gc::kSequenceSound, std::uint8_t{0x33});
+    fake.set(gc::kHeroAnimSpeed, 1.0f);
     // The Thruster-Pack on his back.
     fake.set(kPackSlotState, kSlotReady);
     fake.set(kPackSlotItem, kThrusterPack);
@@ -173,6 +193,9 @@ void tick(Fake& f) {
         s.load();
         hero_l00_update_state_machine();
         s.flush();
+        if (s.charging()) {
+            s.hold_pose();
+        }
     }
     f.set(kStateTimer, f.get<std::int32_t>(kStateTimer) + 1);
     s.observe();
@@ -566,18 +589,54 @@ void a_wall_bonks_him_back() {
     check(gc::shim().bonking(), "a wall in reach ahead: the bonk");
 }
 
-void the_charge_takes_the_long_jumps_pose() {
+void pose_frames_are_clamped() {
+    check(gc::pose_frames(18, 18, 30) == std::make_pair(18, 18), "the default, held");
+    check(gc::pose_frames(10, 14, 30) == std::make_pair(10, 14), "a loop");
+    check(gc::pose_frames(40, 50, 30) == std::make_pair(29, 29), "past the end: its last frame");
+    check(gc::pose_frames(20, 10, 30) == std::make_pair(20, 20), "backwards: held at the first");
+    check(gc::pose_frames(-3, 5, 0) == std::make_pair(0, 5), "frames unknown: as asked, from 0");
+}
+
+void the_charge_takes_the_long_jumps_pose_held() {
     Fake& f = fresh();
     start_charge(f);
-    check(f.animations.size() == 1 && f.animations[0].first == gc::kChargePose && f.animations[0].second == -2.0f,
-          "the long jump's animation, on Going Commando's blend curve");
-    check(f.loops.size() == 1 && f.loops[0].first == gc::kChargePoseLoopFrom &&
-              f.loops[0].second == gc::kChargePoseLoopTo,
-          "held in its flight");
+    check(f.animations.size() == 1 && f.animations[0].id == gc::kChargePose &&
+              f.animations[0].start == gc::kChargePoseFrom && f.animations[0].frames == -2.0f,
+          "the long jump's animation from the pose's frame, on Going Commando's blend curve");
+    check(f.loops.empty(), "the default holds one frame: no loop");
+    const gc::Memory m = f.mem();
+    check(m.read<std::uint8_t>(kFakeMoby + gc::kMobySound) == 0x33, "the hover's looping sound, not the long jump's");
+    check(f.get<float>(gc::kHeroAnimSpeed) == 0.0f, "the animation held still");
+    m.write(kFakeMoby + gc::kMobyTriggers, std::uint8_t{4});
+    f.set(gc::kHeroAnimSpeed, 1.0f);
     for (int i = 0; i < 30; ++i) {
         tick(f);
     }
     check(f.animations.size() == 1, "not started again while he charges");
+    check(m.read<std::uint8_t>(kFakeMoby + gc::kMobyTriggers) == 0, "no long jump sounds at its frames");
+    check(f.get<float>(gc::kHeroAnimSpeed) == 0.0f, "still held");
+    check(f.sounds.size() == 1 && f.sounds[0].first == gc::kChargeSound && f.stops == 0, "one hum, for all of it");
+    f.set(kStateTimer, 100);
+    f.pad(false, false);
+    tick(f);
+    check(!gc::shim().charging() && f.get<float>(gc::kHeroAnimSpeed) == 1.0f, "let go after it");
+    check(f.stops == 1, "the hum stopped with it");
+
+    f = fresh();
+    gc::shim().set_pose(10, 14);
+    start_charge(f);
+    check(f.animations.size() == 1 && f.animations[0].start == 10 && f.loops.size() == 1 && f.loops[0].first == 10 &&
+              f.loops[0].second == 14,
+          "a range: looped by the game");
+    check(f.get<float>(gc::kHeroAnimSpeed) == 1.0f, "and not held");
+
+    f = fresh();
+    gc::shim().set_pose(40, 50);
+    start_charge(f);
+    check(f.animations.size() == 1 && f.animations[0].start == 29 && f.loops.empty(), "past its 30 frames: its last");
+
+    f = fresh();
+    start_charge(f);
     f.set(kStateTimer, 100);
     f.set(kWallHit, std::uint8_t{1});
     f.set(kDisplacement, 0.0f);
@@ -657,7 +716,8 @@ int main() {
     letting_go_of_r1_stops_it_after_61_frames();
     other_ends_of_a_charge();
     a_wall_bonks_him_back();
-    the_charge_takes_the_long_jumps_pose();
+    pose_frames_are_clamped();
+    the_charge_takes_the_long_jumps_pose_held();
     one_blue_for_every_part_of_the_flame();
     the_tint_is_only_the_flames_in_a_charge();
     the_ribbon_is_blue_in_a_charge();

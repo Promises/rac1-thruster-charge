@@ -10,11 +10,13 @@ least) and he stops; run into a wall and he bonks back off it. There is no jump 
 Ratchet & Clank has no Charge Boots (no model, no animation), so the charge runs in what it does
 have: the Thruster-Pack. It runs in the hover's state (the same double tap of R1, the same float a
 little over the ground) with the hover's hum, in the pose of the Thruster-Pack's long jump (R1 or
-R2 and X), held in its flight for as long as he charges, and the Thruster-Pack's flames turn blue
-while he charges. The charge is his whenever the Thruster-Pack is on his back: its
-double tap charges instead of hovering. With the Heli-Pack or no pack, R1 does what the game does.
+R2 and X), held still at its apex for as long as he charges and without the long jump's own
+sounds, and the Thruster-Pack's flames turn blue while he charges. The charge is his whenever the
+Thruster-Pack is on his back: its double tap charges instead of hovering. With the Heli-Pack or no pack, R1 does what the game does.
 The Thruster-Pack's long jump and its boost in a double jump stay. The setting **Speed** scales the
-charge.
+charge. **Pose: first frame** and **Pose: last frame** (default 18 and 18) pick the long jump's
+frames the charge holds: the same frame holds it still, a range loops it (the game's loop jumps
+back, so it is not seamless).
 
 **Needs OpenRAC with the hook points `rac1.player.update_movement`, `rac1.fx.world_quad.draw`,
 `rac1.fx.thruster_flame.draw` and `rac1.fx.burst.spawn`** (branch `rac1-steer-hook`, not in a
@@ -49,7 +51,8 @@ that code on Ratchet & Clank's hero:
   `set_planar_vel`, `turn_to` and change of state, through their hook points' entries; the SDK's
   collision lines and `moby_hit` for the hits; the hover's hum for the charge's sound; Ratchet's
   body-tilt records for the lean; Ratchet & Clank's own `set_hero_animation` and
-  `hero_queue_sequence`, found by name, for the long jump's pose (animation 0x26) held in a loop. Each polyfill's comment says what differs from Going Commando.
+  `hero_queue_sequence`, found by name, for the long jump's pose (animation 0x26), held still or
+  looped. Each polyfill's comment says what differs from Going Commando.
 
 The mod's own parts: the hooks (`rac1.player.update` around the hero's update,
 `rac1.player.update_movement` to move him by the copied code while he charges,

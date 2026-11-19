@@ -2,7 +2,7 @@
   "format": 2,
   "id": "thruster-charge",
   "name": "Thruster Charge",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "author": "Henning Berge",
   "description": "Going Commando's Charge Boots charge on Clank's Thruster-Pack, running Going Commando's own copied code: with the Thruster-Pack on, double-tap R1 and hold to charge along his facing in the Thruster long jump's pose, steering with the stick, the Thruster-Pack's flames blue; enemies in the way are hit, a wall bonks him back. It replaces the Thruster-Pack's hover; its long jump and air boost stay. Needs OpenRAC with the rac1.player.update_movement, rac1.fx.world_quad.draw, rac1.fx.thruster_flame.draw and rac1.fx.burst.spawn hook points.",
   "license": "GPL-3.0-or-later AND GPL-3.0-only",
@@ -29,6 +29,24 @@
       "max": 1.5,
       "step": 0.05,
       "description": "Times Going Commando's charge speeds (11.5 units a second, 30 in the first second)."
+    },
+    {
+      "key": "pose_loop_from",
+      "name": "Pose: first frame",
+      "type": "int",
+      "default": 18,
+      "min": 0,
+      "max": 60,
+      "description": "The Thruster long jump's animation frame the charge holds (or loops from). The same as the last frame: held still."
+    },
+    {
+      "key": "pose_loop_to",
+      "name": "Pose: last frame",
+      "type": "int",
+      "default": 18,
+      "min": 0,
+      "max": 60,
+      "description": "The frame the charge's pose loops back from; the same as the first frame: held still."
     }
   ]
 }
