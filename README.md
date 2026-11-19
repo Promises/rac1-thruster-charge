@@ -8,8 +8,10 @@ turning him. Enemies and crates in his way take a wrench hit. Let go of R1 (afte
 least) and he stops; run into a wall and he bonks back off it. There is no jump out of a charge.
 
 Ratchet & Clank has no Charge Boots (no model, no animation), so the charge runs in what it does
-have: the Thruster-Pack's hover pose and hum, which already share the double tap of R1 and the
-hover a little over the ground. The charge is his whenever the Thruster-Pack is on his back: its
+have: the Thruster-Pack. It runs in the hover's state (the same double tap of R1, the same float a
+little over the ground) with the hover's hum, in the pose of the Thruster-Pack's long jump (R1 or
+R2 and X), held in its flight for as long as he charges, and the Thruster-Pack's flames turn blue
+while he charges. The charge is his whenever the Thruster-Pack is on his back: its
 double tap charges instead of hovering. With the Heli-Pack or no pack, R1 does what the game does.
 The Thruster-Pack's long jump and its boost in a double jump stay. The setting **Speed** scales the
 charge.
@@ -45,15 +47,23 @@ that code on Ratchet & Clank's hero:
 - **Functions**: Going Commando's are polyfills: Ratchet & Clank's own `speed_step`,
   `set_planar_vel`, `turn_to` and change of state, through their hook points' entries; the SDK's
   collision lines and `moby_hit` for the hits; the hover's hum for the charge's sound; Ratchet's
-  body-tilt records for the lean. Each polyfill's comment says what differs from Going Commando.
+  body-tilt records for the lean; Ratchet & Clank's own `set_hero_animation` and
+  `hero_queue_sequence`, found by name, for the long jump's pose (animation 0x26) held in a loop. Each polyfill's comment says what differs from Going Commando.
 
 The mod's own parts: the hooks (`rac1.player.update` around the hero's update,
 `rac1.player.update_movement` to move him by the copied code while he charges,
 `rac1.player.enter_move_state` to keep the hover the charge's: the Thruster-Pack's own double
 tap is refused), and the speed setting.
 
-Not there yet: Going Commando's flames at his feet (they need a model and texture of the mod's)
-and its own charge sound and stop sound (Ratchet & Clank has neither).
+The blue flames: the Thruster-Pack's flames are drawn by the game's `draw_joint_aligned_beam_effect`
+as two textured quads, a glow and a ribbon. Only the ribbon's colours are data (a table nothing
+else draws with), so the mod tints that table blue while he charges and puts it back after. The
+quads' texture, the red glow and the orange sparks are constants in the game's code: they stay
+as they are, which needs a hook point on `draw_joint_aligned_beam_effect` and
+`emit_beam_trail_particles` to change.
+
+Not there yet: Going Commando's flames at his feet, and its own charge and stop sounds (Ratchet &
+Clank has neither).
 
 ## Build
 
