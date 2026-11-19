@@ -26,6 +26,13 @@ if(NOT OpenRACMod_DIR)
 endif()
 find_package(OpenRACMod 1.23 REQUIRED)
 
+# Windows: GitHub's windows-2025 image pairs a Visual Studio whose C++ library asks for a newer Clang
+# than the clang-cl it ships (STL1000), depending on the image a run gets. The library's own switch
+# lets this clang-cl build against it; MSVC is true for clang-cl too.
+if(MSVC)
+  add_compile_definitions(_ALLOW_COMPILER_AND_STL_VERSION_MISMATCH)
+endif()
+
 # Going Commando's Charge Boots charge code, copied from rac2-decomp (src/gc/*.c), and the
 # translation layer that runs it on Ratchet & Clank's hero (src/gc/rac1_shim.*). The copied files include the
 # layer's common.h and names.h (src/gc/shim/) in place of rac2-decomp's; they are compiled as they
