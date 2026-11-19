@@ -71,12 +71,14 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # Visual Studio's compiler, x64, with Ninja in its environment (Set up MSVC below). The C
-          # files copied from Going Commando's decompilation (src/gc/*.c) are GNU C (the TI mode,
-          # arithmetic on void *, attributes): Visual Studio's clang-cl compiles them, cl the C++.
+          # Visual Studio's environment, x64, with Ninja in it (Set up MSVC below). The C files copied
+          # from Going Commando's decompilation (src/gc/*.c) are GNU C (the TI mode, arithmetic on
+          # void *, attributes), which cl does not take: Visual Studio's clang-cl compiles them, and
+          # the C++ too (CMake refuses clang-cl for one language and another frontend for the
+          # other). It links with Visual Studio's link, as cl's builds do.
           - name: windows-x86_64
             os: windows-2025
-            configure: -DCMAKE_C_COMPILER=clang-cl
+            configure: -DCMAKE_C_COMPILER=clang-cl -DCMAKE_CXX_COMPILER=clang-cl
           # Ubuntu 22.04, the oldest the runners offer: a library built here needs glibc 2.35 or
           # later, what the launcher's Linux game needs too.
           - name: linux-x86_64
