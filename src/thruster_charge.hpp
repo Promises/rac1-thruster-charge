@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //
-// The Charge Boots' rules that are this mod's, not Going Commando's: what owns the boots, which
-// of the game's own changes of state a charge refuses, how often a moby takes the charge's hit,
-// and the tick's length. The charge itself is Going Commando's code (src/gc/), run on Ratchet &
-// Clank's hero by the translation layer (src/gc/rac1_shim.hpp).
+// Thruster Charge's rules that are this mod's, not Going Commando's: which of the game's own
+// changes of state a charge refuses, how often a moby takes the charge's hit, and the tick's
+// length. The charge itself is Going Commando's Charge Boots code (src/gc/), run on Ratchet &
+// Clank's hero and his Thruster-Pack by the translation layer (src/gc/rac1_shim.hpp).
 //
 // Nothing here reads the game: mod.cpp does, and the tests test the rules on plain values.
 #pragma once
@@ -12,11 +12,10 @@
 #include <array>
 #include <cmath>
 #include <cstdint>
-#include <vector>
 
 #include "layout.hpp"
 
-namespace charge_boots {
+namespace thruster_charge {
 
 // Going Commando's frame: a 60th of a second.
 constexpr float kGcFrame = 1.0f / 60.0f;
@@ -82,40 +81,6 @@ inline Request judge(std::int32_t asked, std::int32_t force, std::int32_t curren
     return Request::Pass;
 }
 
-// The boots, owned: with the game in progress, in the mod's save data beside its save.
-class Ownership {
-public:
-    // The record: "CB", its version, and a byte of flags (1: owned).
-    static std::vector<std::uint8_t> encode(bool owned) {
-        return {'C', 'B', kVersion, static_cast<std::uint8_t>(owned ? kOwned : 0)};
-    }
-
-    static bool decode(const std::vector<std::uint8_t>& bytes) {
-        return bytes.size() >= 4 && bytes[0] == 'C' && bytes[1] == 'B' && bytes[2] == kVersion &&
-               (bytes[3] & kOwned) != 0;
-    }
-
-    // A game loaded or started: what its save data says.
-    void restore(const std::vector<std::uint8_t>& bytes) { m_saved = decode(bytes); }
-
-    // Each tick, whether the game's save owns the item that brings the boots. True when that just
-    // made them his: the record is then to be written.
-    bool observe(bool item_owned) {
-        if (item_owned && !m_saved) {
-            m_saved = true;
-            return true;
-        }
-        return false;
-    }
-
-    bool owned(bool always_on) const { return always_on || m_saved; }
-
-private:
-    static constexpr std::uint8_t kVersion = 1;
-    static constexpr std::uint8_t kOwned = 1;
-    bool m_saved = false;
-};
-
 // One hit a moby each kHitCooldown, by its slot.
 class HitCooldown {
 public:
@@ -153,4 +118,4 @@ private:
     std::array<Entry, 8> m_entries{};
 };
 
-}  // namespace charge_boots
+}  // namespace thruster_charge

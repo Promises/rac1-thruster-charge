@@ -11,7 +11,7 @@
  * USA v1.01 (rac2-decomp's disc): func_L00_002C9448. USA v2.00 (the disc this mod's author plays; his own
  * decomp, Promises/RaC-Going-Decompiled, has it as asm only): func_L00_002C96D0, its call to hero_l00_set_action(0x7B, 1) at 0x002CA220.
  *
- * The copied lines are unchanged. The lines marked (charge-boots) are this mod's: the function's
+ * The copied lines are unchanged. The lines marked (thruster-charge) are this mod's: the function's
  * head cut down to the cases the charge needs. Every name the copied lines use is the translation
  * layer's (gc/shim/common.h, gc/rac1_shim.cpp): Going Commando's hero, states, globals and
  * functions in Ratchet & Clank's terms.
@@ -137,9 +137,9 @@ extern void start_equipped_item_animation(void);
 extern int PlayMobySound(int, int, char *);
 extern int math_fast_float_d(int *);
 
-/* ==== (charge-boots) The file's head ends here. ==== */
+/* ==== (thruster-charge) The file's head ends here. ==== */
 
-/* (charge-boots) g_hero_state is this file's own view of the hero: the struct above has pointers,
+/* (thruster-charge) g_hero_state is this file's own view of the hero: the struct above has pointers,
    which make it longer on a 64-bit host than on the PS2, so it cannot lie over the translation
    layer's hero at Going Commando's offsets as the other files' views do. It is filled with the
    fields the block reads, from those offsets, as it starts. */
@@ -161,7 +161,7 @@ static void gc_shim_view_hero(void)
 int ProcessHeroEquippedItemInput(void)
 {
     int previous_frame, state;
-    /* (charge-boots) In place of the source's lines 132-145 (the function's early returns: the hero
+    /* (thruster-charge) In place of the source's lines 132-145 (the function's early returns: the hero
        disabled, holding nothing, his input locked, his hands busy) and 147-367 (the other
        items' input): the view filled, and the translation layer's stand-in for those returns. */
     gc_shim_view_hero();

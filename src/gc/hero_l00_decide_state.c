@@ -12,7 +12,7 @@
  * USA v1.01 (rac2-decomp's disc): func_L00_002CB3A8. USA v2.00 (the disc this mod's author plays; his own
  * decomp, Promises/RaC-Going-Decompiled, has it as asm only): func_L00_002CB650, its case 0x7B at 0x002CD5C4.
  *
- * The copied lines are unchanged. The lines marked (charge-boots) are this mod's: the function's
+ * The copied lines are unchanged. The lines marked (thruster-charge) are this mod's: the function's
  * head cut down to the cases the charge needs. Every name the copied lines use is the translation
  * layer's (gc/shim/common.h, gc/rac1_shim.cpp): Going Commando's hero, states, globals and
  * functions in Ratchet & Clank's terms.
@@ -155,14 +155,14 @@ s32 ref_L00_002CB3A8_00(void);
 s32 hero_try_grab_object(s32);
 s32 nearest_rail_point(s8 *, void **, s128 *, void *, void *, s32 *, void *, s32, s32);
 
-/* ==== (charge-boots) The file's head ends here. Below, hero_l00_decide_state with only the case
+/* ==== (thruster-charge) The file's head ends here. Below, hero_l00_decide_state with only the case
    the charge needs; lines not marked are the source's. ==== */
 /* The main per-frame decision routine for Ratchet: it reads the pad and the current state, then picks the next move (jump, swing, glide, grind, attack and more) and starts the matching animation. */
 void hero_l00_decide_state(void) {
     f32 vec_a[4] __attribute__((aligned(16)));
     f32 vec_b[4] __attribute__((aligned(16)));
     f32 vec_c[4] __attribute__((aligned(16)));
-    /* (charge-boots) The source's switch on the state (line 214), with one of its cases: */
+    /* (thruster-charge) The source's switch on the state (line 214), with one of its cases: */
     switch (FLD(g_hero_state, u32, 0x2294)) {
     case 0x7B:
     {
@@ -210,6 +210,6 @@ void hero_l00_decide_state(void) {
         }
         break;
     }
-    /* (charge-boots) the switch's and the function's ends */
+    /* (thruster-charge) the switch's and the function's ends */
     }
 }

@@ -12,7 +12,7 @@
  * USA v1.01 (rac2-decomp's disc): func_L00_002C42E0. USA v2.00 (the disc this mod's author plays; his own
  * decomp, Promises/RaC-Going-Decompiled, has it as asm only): func_L00_002C4560 (hero_l00_decide_state's jal for the stop and the bonk).
  *
- * The copied lines are unchanged. The lines marked (charge-boots) are this mod's: the function's
+ * The copied lines are unchanged. The lines marked (thruster-charge) are this mod's: the function's
  * head cut down to the cases the charge needs. Every name the copied lines use is the translation
  * layer's (gc/shim/common.h, gc/rac1_shim.cpp): Going Commando's hero, states, globals and
  * functions in Ratchet & Clank's terms.
@@ -164,18 +164,18 @@ typedef union { u8 b[0x2600]; s16 h[0x1300]; u16 uh[0x1300]; s32 i[0x980]; u32 u
 #define PTR(o) (HP->ptr[(o)/4])
 #define VEC(o) (D_00189E20 + (o))
 #define COPY_VECTOR(dst,src) (*(TI128 *)VEC(dst) = *(TI128 *)VEC(src))
-/* ==== (charge-boots) The file's head ends here. Below, hero_l00_set_action with only the two
+/* ==== (thruster-charge) The file's head ends here. Below, hero_l00_set_action with only the two
    cases the charge needs; lines not marked are the source's. ==== */
 /* Changes the player's action, initializes its movement parameters and selects animation. */
 s32 hero_l00_set_action(s32 action, s32 animate) {
-    /* (charge-boots) of the source's locals (lines 151-168), the lines declaring the ones the two cases use: */
+    /* (thruster-charge) of the source's locals (lines 151-168), the lines declaring the ones the two cases use: */
     u32 animation_16, animation_21, animation_22, animation_41, animation_43, animation_53;
     f32 frames;
-    /* (charge-boots) In place of the source's lines 169-201 (its refusals, and its bookkeeping of the
+    /* (thruster-charge) In place of the source's lines 169-201 (its refusals, and its bookkeeping of the
        state it leaves): Ratchet & Clank's own change of state, to its state for this one
        (gc_shim_enter_state); 0 when the game refuses it. */
     if (!gc_shim_enter_state(action, animate)) return 0;
-    /* (charge-boots) The source's switch on the new state (line 202), with two of its cases: */
+    /* (thruster-charge) The source's switch on the new state (line 202), with two of its cases: */
     switch (action) {
     case 0x7B: {
         s32 n = -2;
@@ -190,11 +190,11 @@ s32 hero_l00_set_action(s32 action, s32 animate) {
         FastVecScale(VEC(0xBD0), VEC(0), -1.0f); REAL(0x1B4) = 0.15f;
         if (!animate) goto finish;
         frames = 8.0f; animation_43 = 0x29; { set_hero_animation(animation_43, 5, frames); goto finish; }
-    /* (charge-boots) the rest of the switch's cases go straight to finish, as its default does */
+    /* (thruster-charge) the rest of the switch's cases go straight to finish, as its default does */
     default:
         goto finish;
     }
-    /* (charge-boots) In place of the source's finish (lines 1198-1211, its bookkeeping after the
+    /* (thruster-charge) In place of the source's finish (lines 1198-1211, its bookkeeping after the
        change), which Ratchet & Clank's change of state did: */
 finish:
     return 1;

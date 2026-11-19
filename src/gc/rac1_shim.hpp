@@ -29,9 +29,9 @@
 #include <cstring>
 #include <functional>
 
-#include "../charge_boots.hpp"
+#include "../thruster_charge.hpp"
 
-namespace charge_boots::gc {
+namespace thruster_charge::gc {
 
 // --- Going Commando's states, control modes and animations, and Ratchet & Clank's for them ---
 
@@ -314,9 +314,8 @@ public:
     // A tick in Going Commando's frames.
     float k() const { return m_k; }
 
-    // The player's settings and the boots' ownership.
+    // The player's setting.
     void set_speed_scale(float scale);
-    void set_owned(bool owned) { m_owned = owned; }
 
     // Going Commando's hero from Ratchet & Clank's (and the pad, the tilt records, the globals).
     void load();
@@ -354,8 +353,14 @@ public:
     void keep_sound();
     // Going Commando's frame timer decremented by a tick (math_fast_float_d).
     std::int32_t step_frame_timer(std::int32_t* timer);
-    // Whether the hero's items' input runs (ProcessHeroEquippedItemInput's early returns).
+    // Whether the hero's items' input runs (ProcessHeroEquippedItemInput's early returns): his feet
+    // on plain ground, the Thruster-Pack on.
     bool item_input_allowed() const;
+    // Whether the Thruster-Pack is on his back and not switched off: what makes the charge his. In
+    // Going Commando the Charge Boots owned (D_001A7B08[0x26]) and worn (D_001A7390[3] == 54);
+    // here the hover's own gate (hero_slot_item_id(3) == 3 and pack_disabled 0,
+    // hero_gadget_use.c:1061-1064).
+    bool thruster_on() const;
     // Once for each polyfill reached that should not be.
     void unreachable(const char* what);
     HitCooldown& hits() { return m_hits; }
@@ -368,7 +373,6 @@ private:
     float m_k = 1.0f;
     float m_clock = 0.0f;
     float m_speed_scale = 1.0f;
-    bool m_owned = false;
     bool m_charging = false;
     bool m_bonking = false;
     bool m_loaded = false;
@@ -381,7 +385,7 @@ private:
 
 Shim& shim();
 
-}  // namespace charge_boots::gc
+}  // namespace thruster_charge::gc
 
 // The copied functions, and the layer's buffers they work on (src/gc/*.c, gc/shim/common.h).
 extern "C" {

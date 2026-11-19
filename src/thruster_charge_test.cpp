@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //
-// The mod's rules (charge_boots.hpp), and the translation layer (gc/rac1_shim.hpp) running Going
+// The mod's rules (thruster_charge.hpp), and the translation layer (gc/rac1_shim.hpp) running Going
 // Commando's copied charge code (src/gc/*.c) on a fake Ratchet & Clank: a buffer of game memory and
 // recording stand-ins for the game's functions. What the game's own functions would do is the
 // fake's guess (the simplest), so these test the copied code's path through the layer: which game
@@ -14,13 +14,13 @@
 #include <utility>
 #include <vector>
 
-#include "charge_boots.hpp"
+#include "thruster_charge.hpp"
 #include "gc/rac1_shim.hpp"
 
 namespace {
 
-using namespace charge_boots;
-namespace gc = charge_boots::gc;
+using namespace thruster_charge;
+namespace gc = thruster_charge::gc;
 
 int failures = 0;
 
@@ -48,6 +48,7 @@ constexpr std::uint32_t kCapsuleRadius = 0x234;
 constexpr std::uint32_t kGroundZ = 0x2D8;
 constexpr std::uint32_t kItemAnim = 0x20A8;
 constexpr std::int32_t kSelf = 0;
+constexpr std::int32_t kHeliPack = 2;
 
 struct Fake {
     std::vector<std::uint8_t> memory = std::vector<std::uint8_t>(0x200000);
@@ -91,7 +92,6 @@ Fake& fresh(float frame_time = kNtsc) {
     fake = Fake{};
     g_fake = &fake;
     s.set_speed_scale(1.0f);
-    s.set_owned(true);
     s.set_tick(frame_time);
     std::memset(gc_shim_hero, 0, gc::kHeroBytes);
     std::memset(gc_shim_lean, 0, gc::kLeanBytes);
@@ -145,6 +145,9 @@ Fake& fresh(float frame_time = kNtsc) {
     fake.set(kControlMode, kModeIdle);
     fake.set(kGroundedFrames, 10);
     fake.set(kCapsuleRadius, 0.5f);
+    // The Thruster-Pack on his back.
+    fake.set(kPackSlotState, kSlotReady);
+    fake.set(kPackSlotItem, kThrusterPack);
     return fake;
 }
 
@@ -208,24 +211,6 @@ void the_hover_does_not_end_a_charge_by_itself() {
     check(judge(kStop, 1, kHover, kModeRun, true, true) == Request::Pass, "the mod's stop: through");
     check(judge(kIdle, 0, kHover, kModeRun, false, false) == Request::Pass, "no charge: the game's");
     check(judge(0x7, 1, 0x2, kModeRun, false, false) == Request::Pass, "anything else: the game's");
-}
-
-void ownership_comes_with_the_persuader_and_is_kept() {
-    Ownership o;
-    check(!o.owned(false) && o.owned(true), "none yet; always_on owns them");
-    check(!o.observe(false), "the save without the item: nothing to write");
-    check(o.observe(true), "the item owned: the record to write");
-    check(o.owned(false), "owned");
-    check(!o.observe(true), "written once");
-    Ownership loaded;
-    loaded.restore(Ownership::encode(true));
-    check(loaded.owned(false), "a save with the record: owned");
-    loaded.restore({});
-    check(!loaded.owned(false), "a new game: not owned");
-    loaded.restore({'C', 'B', 2, 1});
-    check(!loaded.owned(false), "a record of another version: not read");
-    loaded.restore(Ownership::encode(false));
-    check(!loaded.owned(false), "a record saying not owned");
 }
 
 void a_moby_is_hit_once_a_half_second() {
@@ -335,7 +320,11 @@ void load_translates_ratchets_hero() {
               copy.read<std::uintptr_t>(gc::kGcMobyPointer) == 0x001A2B30u,
           "the moby, as a word and as the Hero union's pointer");
     check((gc_shim_pad[kPadHeld] & kPadR1) != 0, "the pad");
-    check(gc_shim_items_owned[0x26] == 1 && gc_shim_item_slots[3] == 54, "the boots owned and worn");
+    check(gc_shim_items_owned[0x26] == 1 && gc_shim_item_slots[3] == 54,
+          "the Thruster-Pack on: Going Commando's boots owned and worn");
+    f.set(kPackSlotItem, kHeliPack);
+    gc::shim().load();
+    check(gc_shim_items_owned[0x26] == 0 && gc_shim_item_slots[3] != 54, "the Heli-Pack: neither");
 }
 
 void flush_writes_back_only_what_changed() {
@@ -388,9 +377,19 @@ void the_double_tap_starts_a_charge() {
     check(!gc::shim().charging(), "30 frames late: no charge");
 
     f = fresh();
-    gc::shim().set_owned(false);
+    f.set(kPackSlotItem, kHeliPack);
     start_charge(f);
-    check(!gc::shim().charging(), "not his: no charge");
+    check(!gc::shim().charging() && f.enters.empty(), "the Heli-Pack: no charge, R1 is the game's");
+
+    f = fresh();
+    f.set(kPackSlotState, 0);
+    start_charge(f);
+    check(!gc::shim().charging() && f.enters.empty(), "no pack: no charge");
+
+    f = fresh();
+    f.set(kPackDisabled, std::int16_t{1});
+    start_charge(f);
+    check(!gc::shim().charging(), "the pack switched off: no charge");
 
     f = fresh();
     f.set(kControlMode, 0x7);
@@ -562,7 +561,6 @@ void a_wall_bonks_him_back() {
 int main() {
     requests_for_the_hover();
     the_hover_does_not_end_a_charge_by_itself();
-    ownership_comes_with_the_persuader_and_is_kept();
     a_moby_is_hit_once_a_half_second();
     angles_and_ticks();
     states_and_animations_map();

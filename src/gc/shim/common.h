@@ -60,9 +60,10 @@ extern unsigned char gc_shim_hero[];
 #define D_L20_001A8FF0 gc_shim_gravity_flag
 /* What coll_process_hit found: moby slots. */
 #define D_L20_001C4480 gc_shim_hits
-/* One owned byte per item; 0x26 is the Charge Boots'. */
+/* One owned byte per item; 0x26 is the Charge Boots' (here: the Thruster-Pack on his back). */
 #define D_001A7B08 gc_shim_items_owned
-/* What the hero wears and holds; slot 3 holds 54 when it is the Charge Boots. */
+/* What the hero wears and holds; slot 3 holds 54 when it is the Charge Boots (here: the
+   Thruster-Pack on his back). */
 #define D_001A7390 gc_shim_item_slots
 /* The double tap's window, in Going Commando's frames. */
 #define D_L00_001A7CC4 gc_shim_double_tap_timer

@@ -12,7 +12,7 @@
  * USA v1.01 (rac2-decomp's disc): func_L00_002BA7D8. USA v2.00 (the disc this mod's author plays; his own
  * decomp, Promises/RaC-Going-Decompiled, has it as asm only): func_L00_002BA8E0, its case 0x7B at 0x002BF18C.
  *
- * The copied lines are unchanged. The lines marked (charge-boots) are this mod's: the function's
+ * The copied lines are unchanged. The lines marked (thruster-charge) are this mod's: the function's
  * head cut down to the cases the charge needs. Every name the copied lines use is the translation
  * layer's (gc/shim/common.h, gc/rac1_shim.cpp): Going Commando's hero, states, globals and
  * functions in Ratchet & Clank's terms.
@@ -198,12 +198,12 @@ extern void hero_slide_along_wall(s32);
 extern s32 hero_l20_set_state(s32, s32);
 extern s32 ref_L00_002BA7D8_00 MACRO_ADDR;
 extern void hero_get_offset_vector(f32 *);
-/* ==== (charge-boots) The file's head ends here. Below, hero_l00_update_state_machine with only
+/* ==== (thruster-charge) The file's head ends here. Below, hero_l00_update_state_machine with only
    the two cases the charge needs; lines not marked are the source's. ==== */
 /* Runs the hero's state machine once per frame. It picks the code for the current state (walk, jump,
  * swing, swim, hurt and so on) and moves, animates and steers the hero accordingly. */
 void hero_l00_update_state_machine(void) {
-    /* (charge-boots) The source's vec_a, vec_b and vec_c are f32[4] on its stack (lines 196-198): the
+    /* (thruster-charge) The source's vec_a, vec_b and vec_c are f32[4] on its stack (lines 196-198): the
        cases pass their addresses as 32-bit handles, which the translation layer resolves only in
        its own memory (gc/shim/common.h), so they are its scratch vectors here. */
     f32 *vec_a = gc_shim_scratch(0);
@@ -214,7 +214,7 @@ void hero_l00_update_state_machine(void) {
     f32 scalar170;
     s32 value29;
     s32 value64;
-    /* (charge-boots) The source's switch on the state (line 563), with two of its cases: */
+    /* (thruster-charge) The source's switch on the state (line 563), with two of its cases: */
     switch (((Hero *)g_hero_state)->u[0x2294/4]) {                              /* switch 1 */
     case 0x77:                                      /* switch 1 */
         ApproachValue((s32)(g_hero_state + 0x1B4), 0.0f, 0.006666667f);
@@ -287,6 +287,6 @@ void hero_l00_update_state_machine(void) {
         ((Hero *)D_L20_00267210)->f[0x278/4] = scalar27;
         ((Hero *)D_L20_00267210)->f[0x1C8/4] = scalar27;
         break;
-    /* (charge-boots) the switch's and the function's ends */
+    /* (thruster-charge) the switch's and the function's ends */
     }
 }

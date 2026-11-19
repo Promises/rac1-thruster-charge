@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //
-// Charge Boots: Going Commando's Charge Boots in Ratchet & Clank, as Going Commando's own code.
+// Thruster Charge: Going Commando's Charge Boots charge on Clank's Thruster-Pack in Ratchet &
+// Clank, running Going Commando's own code.
 //
-// The charge is Going Commando's code, copied (src/gc/*.c, from rac2-decomp): the double tap that
+// The charge is Going Commando's Charge Boots code, copied (src/gc/*.c, from rac2-decomp): the double tap that
 // starts it (ProcessHeroEquippedItemInput), what entering it sets up (hero_l00_set_action), the
 // charge's and the bonk's movement (hero_l00_update_state_machine) and its ends (hero_l00_decide_state).
 // The translation layer (src/gc/rac1_shim.hpp) runs it on Ratchet & Clank's hero: Going Commando's
-// state 0x7B is Ratchet & Clank's Thruster-Pack hover (0x81) while the boots charge in it.
+// state 0x7B is Ratchet & Clank's Thruster-Pack hover (0x81) while he charges in it.
 //
 // Three hook points:
 //   rac1.player.update                   each tick, around the hero's update: before it, the copied
@@ -17,40 +18,39 @@
 //                                        hover and wall bonk
 //   rac1.player.enter_move_state         keeps the hover the charge's: the game's own way into it
 //                                        (the Thruster-Pack's double tap) refused, its ways out
-//                                        refused while he charges (charge_boots::judge)
+//                                        refused while he charges (thruster_charge::judge)
 // and the entries of rac1.player.approach_speed, set_planar_velocity, turn_to_heading and
 // enter_move_state, which the translation layer calls in place of Going Commando's functions.
 // The movement one is new in OpenRAC (branch rac1-steer-hook), declared in movement_hook.hpp until
 // the SDK has it; a game without it refuses the mod with the reason.
 //
-// The boots are his once the game in progress owns the Persuader (layout.hpp says why that item),
-// kept in the mod's save data beside the save, or from the start with the setting always_on.
+// The charge is his whenever the Thruster-Pack is on his back (the hover's own gate): its double tap
+// of R1 charges instead of hovering. With the Heli-Pack or no pack, R1 does what the game does. The
+// Thruster-Pack's long jump and its boost in the air are the game's.
 #include <cstdint>
 
 #include "openrac/games/rac1.hpp"
 #include "openrac/mod.hpp"
 
-#include "charge_boots.hpp"
+#include "thruster_charge.hpp"
 #include "gc/rac1_shim.hpp"
 #include "layout.hpp"
 #include "movement_hook.hpp"
 
 namespace {
 
-namespace cb = charge_boots;
-namespace gc = charge_boots::gc;
+namespace tc = thruster_charge;
+namespace gc = thruster_charge::gc;
 namespace rac1 = openrac::rac1;
 
 // TODO(movement hook): openrac::rac1::Hero_UpdateMovement once the SDK has it (movement_hook.hpp).
-using UpdateMovement = cb::hooks::Hero_UpdateMovement;
+using UpdateMovement = tc::hooks::Hero_UpdateMovement;
 
 struct State {
     openrac::Mod* mod = nullptr;
-    cb::Disc disc{};
+    tc::Disc disc{};
     // Whether the change of state going on is the mod's own (the translation layer's).
     bool mine = false;
-    bool always_on = false;
-    cb::Ownership ownership;
     // The level connect() last saw (-2: none yet).
     int level = -2;
 };
@@ -62,12 +62,9 @@ State& state() {
 
 gc::Shim& layer() { return gc::shim(); }
 
-std::int32_t hero_state(const openrac::Memory& m) { return m.read<std::int32_t>(state().disc.hero + cb::kHeroState); }
+std::int32_t hero_state(const openrac::Memory& m) { return m.read<std::int32_t>(state().disc.hero + tc::kHeroState); }
 
-void read_settings(openrac::Mod& mod) {
-    state().always_on = mod.setting<bool>("always_on");
-    layer().set_speed_scale(mod.setting<float>("speed"));
-}
+void read_settings(openrac::Mod& mod) { layer().set_speed_scale(mod.setting<float>("speed")); }
 
 // The game as the translation layer reaches it in the level loaded now: each level has its own
 // build of the hero's functions (the hook points' entries) and its own tilt records.
@@ -148,12 +145,6 @@ void before_update() {
     gc::Shim& l = layer();
     l.set_tick(m.read<float>(s.disc.frame_time));
 
-    if (s.ownership.observe(m.read<std::uint8_t>(s.disc.items_owned + cb::kUnlockItem) != 0)) {
-        mod.save_data_set(cb::Ownership::encode(true));
-        mod.info("Charge Boots: his, with the Persuader");
-    }
-    l.set_owned(s.ownership.owned(s.always_on));
-
     // Hurt, a slip, a cutscene, his death: the game took him out of the charge.
     l.observe();
     // Going Commando's double tap, as its item input runs it each frame.
@@ -165,7 +156,7 @@ void before_update() {
 void after_update() {
     gc::Shim& l = layer();
     l.observe();
-    if (l.charging() && hero_state(state().mod->memory()) == cb::kHover) {
+    if (l.charging() && hero_state(state().mod->memory()) == tc::kHover) {
         l.load();
         hero_l00_decide_state();
         l.flush();
@@ -181,9 +172,6 @@ void load(openrac::Mod& mod) {
     if (!ntsc && mod.version() != "pal") {
         throw openrac::Error("this mod knows the PAL and NTSC-U discs only");
     }
-    if (!mod.has_save_data()) {
-        throw openrac::Error("needs OpenRAC with mod interface 1.16 (save data)");
-    }
     if (!mod.has_hook_entry()) {
         throw openrac::Error("needs OpenRAC with mod interface 1.21 (hook_entry)");
     }
@@ -192,7 +180,7 @@ void load(openrac::Mod& mod) {
     }
     State& s = state();
     s.mod = &mod;
-    s.disc = cb::disc_for(ntsc);
+    s.disc = tc::disc_for(ntsc);
     read_settings(mod);
     connect_once(mod);
 
@@ -220,35 +208,29 @@ void load(openrac::Mod& mod) {
         State& st = state();
         const openrac::Memory m = st.mod->memory();
         const std::uint32_t h = st.disc.hero;
-        switch (cb::judge(asked, force, hero_state(m), m.read<std::int32_t>(h + cb::kControlMode),
+        switch (tc::judge(asked, force, hero_state(m), m.read<std::int32_t>(h + tc::kControlMode),
                           layer().charging(), st.mine)) {
-        case cb::Request::Pass:
+        case tc::Request::Pass:
             return original(asked, force);
-        case cb::Request::Refuse:
-            if (asked == cb::kHover && !layer().charging()) {
-                m.write(h + cb::kHoverLatch, std::uint8_t{0});
+        case tc::Request::Refuse:
+            if (asked == tc::kHover && !layer().charging()) {
+                m.write(h + tc::kHoverLatch, std::uint8_t{0});
             }
             return 0;
-        case cb::Request::AsIdle:
-            m.write(h + cb::kHoverLatch, std::uint8_t{0});
-            return original(cb::kIdle, 0);
+        case tc::Request::AsIdle:
+            m.write(h + tc::kHoverLatch, std::uint8_t{0});
+            return original(tc::kIdle, 0);
         }
         return original(asked, force);
     });
 
-    s.ownership.restore(mod.save_data());
-    mod.on_save_data([] {
-        State& st = state();
-        st.ownership.restore(st.mod->save_data());
-        layer().reset();
-    });
     if (mod.has_settings_set()) {
         mod.on_settings([] { read_settings(*state().mod); });
     }
 
-    mod.info("Charge Boots: double-tap R1 and hold to charge (Going Commando's code)");
+    mod.info("Thruster Charge: with the Thruster-Pack on, double-tap R1 and hold to charge (Going Commando's Charge Boots code)");
 }
 
 }  // namespace
 
-OPENRAC_MOD_CPP("charge-boots", "0.2.0", load)
+OPENRAC_MOD_CPP("thruster-charge", "0.3.0", load)

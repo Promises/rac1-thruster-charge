@@ -11,16 +11,16 @@
 
 #include "../layout.hpp"
 
-namespace cb = charge_boots;
-using charge_boots::gc::Shim;
-using charge_boots::gc::shim;
+namespace tc = thruster_charge;
+using thruster_charge::gc::Shim;
+using thruster_charge::gc::shim;
 
 // --- The buffers the copied code works on (gc/shim/common.h names them) ---
 
 extern "C" {
-alignas(16) unsigned char gc_shim_hero[charge_boots::gc::kHeroBytes];
-alignas(16) unsigned char gc_shim_lean[charge_boots::gc::kLeanBytes];
-alignas(16) unsigned char gc_shim_pad[charge_boots::gc::kPadBytes];
+alignas(16) unsigned char gc_shim_hero[thruster_charge::gc::kHeroBytes];
+alignas(16) unsigned char gc_shim_lean[thruster_charge::gc::kLeanBytes];
+alignas(16) unsigned char gc_shim_pad[thruster_charge::gc::kPadBytes];
 std::int32_t gc_shim_gravity_flag;
 std::int32_t gc_shim_hits[8];
 unsigned char gc_shim_items_owned[0x40];
@@ -32,7 +32,7 @@ unsigned char gc_shim_flame_b[16];
 
 namespace {
 
-namespace gc = charge_boots::gc;
+namespace gc = thruster_charge::gc;
 
 alignas(16) float g_scratch[3][4];
 
@@ -53,6 +53,8 @@ const std::array<Region, 3> kRegions{{
 }};
 
 constexpr float kGcFps = 60.0f;
+// Going Commando's Charge Boots: owned (D_001A7B08[0x26]) and worn (D_001A7390[3] == 54). Both
+// read "the Thruster-Pack is on" here (Shim::thruster_on).
 constexpr std::int32_t kChargeBootsItem = 0x26;
 constexpr std::uint32_t kChargeBootsWorn = 54;
 
@@ -101,7 +103,7 @@ float* resolve_f32(std::int32_t handle) { return static_cast<float*>(shim().reso
 
 }  // namespace
 
-namespace charge_boots::gc {
+namespace thruster_charge::gc {
 
 Shim& shim() {
     static Shim s;
@@ -151,8 +153,9 @@ void Shim::load() {
 
     gc_shim_gravity_flag = m.read<std::uint8_t>(game.hero + kGravityMode);
     std::memcpy(gc_shim_pad + kPadHeld, m.base + game.pad + kPadHeld, 8);
-    gc_shim_items_owned[kChargeBootsItem] = m_owned ? 1 : 0;
-    gc_shim_item_slots[3] = kChargeBootsWorn;
+    const bool thruster = thruster_on();
+    gc_shim_items_owned[kChargeBootsItem] = thruster ? 1 : 0;
+    gc_shim_item_slots[3] = thruster ? kChargeBootsWorn : 0;
     if (game.lean != 0) {
         std::memcpy(gc_shim_lean, m.base + game.lean, kLeanBytes);
     }
@@ -324,13 +327,23 @@ std::int32_t Shim::step_frame_timer(std::int32_t* timer) {
     return *timer == 0 ? 1 : 0;
 }
 
+bool Shim::thruster_on() const {
+    const Memory& m = game.memory;
+    if (m.base == nullptr || game.hero == 0) {
+        return false;
+    }
+    return m.read<std::int32_t>(game.hero + kPackSlotState) == kSlotReady &&
+           m.read<std::int32_t>(game.hero + kPackSlotItem) == kThrusterPack &&
+           m.read<std::int16_t>(game.hero + kPackDisabled) == 0;
+}
+
 bool Shim::item_input_allowed() const {
     const Memory& m = game.memory;
     if (m.base == nullptr || game.hero == 0) {
         return false;
     }
-    return m.read<std::uint8_t>(game.hero + kVehicleMode) == 0 && m.read<std::uint8_t>(game.hero + kGravityMode) == 0 &&
-           m.read<std::int16_t>(game.hero + kMagnetFlag) == 0;
+    return thruster_on() && m.read<std::uint8_t>(game.hero + kVehicleMode) == 0 &&
+           m.read<std::uint8_t>(game.hero + kGravityMode) == 0 && m.read<std::int16_t>(game.hero + kMagnetFlag) == 0;
 }
 
 void Shim::unreachable(const char* what) {
@@ -344,7 +357,7 @@ void Shim::unreachable(const char* what) {
     }
 }
 
-}  // namespace charge_boots::gc
+}  // namespace thruster_charge::gc
 
 // --- The polyfills, by Going Commando's names (gc/shim/common.h renames the copied code's calls) ---
 
@@ -361,7 +374,7 @@ std::int32_t gc_shim_item_input_allowed(void) { return shim().item_input_allowed
 // --- Math: Going Commando's own, the same on the host ---
 
 // FastAddRotations: a + b, wrapped to -pi..pi.
-float gc_shim_FastAddRotations(float a, float b) { return cb::wrap_angle(a + b); }
+float gc_shim_FastAddRotations(float a, float b) { return tc::wrap_angle(a + b); }
 
 // math_fast_sin_or_cos_a / _b: cos and sin (hero_compute_push_direction builds x from _a, y from _b).
 float gc_shim_math_fast_sin_or_cos_a(float a) { return std::cos(a); }
@@ -461,10 +474,10 @@ void gc_shim_h_pad_clamp_stick_to_unit_range(std::int32_t out, std::int32_t stic
         return;
     }
     const float step = rate * shim().k();
-    approach(s[2], -copy_f32(charge_boots::gc::kGcStick), step);
+    approach(s[2], -copy_f32(thruster_charge::gc::kGcStick), step);
     s[2] = std::clamp(s[2], -1.0f, 1.0f);
     o[0] = s[2];
-    approach(s[1], copy_f32(charge_boots::gc::kGcStick + 4), step);
+    approach(s[1], copy_f32(thruster_charge::gc::kGcStick + 4), step);
     s[1] = std::clamp(s[1], -1.0f, 1.0f);
     o[1] = s[1];
 }
@@ -474,7 +487,7 @@ void gc_shim_h_pad_clamp_stick_to_unit_range(std::int32_t out, std::int32_t stic
 // from it. x and y are 0 in the charge.
 void gc_shim_hero_rotate_matrix(float /*x*/, float /*y*/, float z) {
     const gc::Memory copy = hero_copy();
-    copy.write(0x98u, cb::wrap_angle(copy.read<float>(0x98u) + z * shim().k()));
+    copy.write(0x98u, tc::wrap_angle(copy.read<float>(0x98u) + z * shim().k()));
 }
 
 // hero_approach_speed (L00_002AFBC0.c:863-868): ground speed toward target speed, up by rise and
@@ -517,20 +530,20 @@ void gc_shim_hero_steer_heading(std::int32_t mode, float accel, float damping, f
 // (hero_l00_decide_state, +0x348) and does not start there (gc_shim_item_input_allowed), so they
 // are not reached. Each does nothing here and says so once.
 void gc_shim_h_hero_apply_mode_transform(std::int32_t, std::int32_t, float) {
-    shim().unreachable("Charge Boots: hero_apply_mode_transform reached (magnetic ground): not translated");
+    shim().unreachable("Thruster Charge: hero_apply_mode_transform reached (magnetic ground): not translated");
 }
 void gc_shim_h_hero_apply_mode_transform_reversed(std::int32_t, std::int32_t, float) {
-    shim().unreachable("Charge Boots: hero_apply_mode_transform_reversed reached (magnetic ground): not translated");
+    shim().unreachable("Thruster Charge: hero_apply_mode_transform_reversed reached (magnetic ground): not translated");
 }
 float gc_shim_h_vec_spring_to_target(std::int32_t, std::int32_t, std::int32_t, float, float, float) {
-    shim().unreachable("Charge Boots: vec_spring_to_target reached (magnetic ground): not translated");
+    shim().unreachable("Thruster Charge: vec_spring_to_target reached (magnetic ground): not translated");
     return 0.0f;
 }
 void gc_shim_h_vec_scale_to_length(std::int32_t, std::int32_t, float) {
-    shim().unreachable("Charge Boots: vec_scale_to_length reached (magnetic ground): not translated");
+    shim().unreachable("Thruster Charge: vec_scale_to_length reached (magnetic ground): not translated");
 }
 void gc_shim_h_cam_set_view_space_height(std::int32_t, std::int32_t, float) {
-    shim().unreachable("Charge Boots: cam_set_view_space_height reached (magnetic ground): not translated");
+    shim().unreachable("Thruster Charge: cam_set_view_space_height reached (magnetic ground): not translated");
 }
 
 // set_hero_animation: his animation. Nothing here: Ratchet & Clank's change of state started the

@@ -8,7 +8,7 @@
 
 #include <cstdint>
 
-namespace charge_boots {
+namespace thruster_charge {
 
 // --- The hero (offsets from g_hero) ---
 
@@ -79,21 +79,21 @@ constexpr std::int32_t kModeHurt = 0x7;
 constexpr std::int32_t kModeCrouch = 0xC;
 
 // --- Items ---
-// What makes the boots his: the Persuader (item 0x23, the vendor discount). Ratchet & Clank has no
-// Hypnomatic (that is Going Commando's item 55); the gadget an NPC on Pokitaru hands over is this
-// one: Fred, the resort owner, takes the Raritanium for it (PAL
-// src/overlays/l11_pokitaru/resort_owner_and_water.c:1219-1224, NTSC
-// src/overlays/l11/mobys/fred_pokitaru.c:129-135). He sets the owned byte himself, not through
-// GiveItem (rac1.item.give), so the mod reads the byte rather than hooking the give.
-constexpr std::uint32_t kUnlockItem = 0x23u;
+// The pack slot (Hero.items[3], 0x1090 + 3 * 0x50): its state (2 ready) and its item. The
+// Thruster-Pack is item 3: the hover's own entry asks hero_slot_item_id(3) == 3
+// (hero_gadget_use.c:1061-1079), which reads these two words.
+constexpr std::uint32_t kPackSlotState = 0x11A4u;
+constexpr std::uint32_t kPackSlotItem = 0x11A8u;
+constexpr std::int32_t kSlotReady = 2;
+constexpr std::int32_t kThrusterPack = 3;
+// Hero.pack_disabled: the pack off (the hover's entry asks it to be 0).
+constexpr std::uint32_t kPackDisabled = 0x22D8u;
 
 struct Disc {
     // g_hero.
     std::uint32_t hero;
     // g_controller_state: pad 0's state.
     std::uint32_t pad;
-    // item_available: one owned byte per item id (0x25 of them).
-    std::uint32_t items_owned;
     // g_frame_time: seconds a tick (1/60 at 60 ticks a second).
     std::uint32_t frame_time;
     // The hero's body-tilt records (hero_eases: 0xB0-byte HeroEase rows that ease his joints toward
@@ -105,9 +105,9 @@ struct Disc {
 
 inline Disc disc_for(bool ntsc) {
     if (ntsc) {
-        return {0x0013F350u, 0x0013C940u, 0x0013D4C0u, 0x0015ED6Cu, 0x0017A680u};
+        return {0x0013F350u, 0x0013C940u, 0x0015ED6Cu, 0x0017A680u};
     }
-    return {0x0013F450u, 0x0013CA40u, 0x0013D5C8u, 0x0015EE6Cu, 0x0017A780u};
+    return {0x0013F450u, 0x0013CA40u, 0x0015EE6Cu, 0x0017A780u};
 }
 
-}  // namespace charge_boots
+}  // namespace thruster_charge

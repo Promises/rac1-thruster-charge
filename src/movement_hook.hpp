@@ -10,7 +10,7 @@
 // without it refuses the mod at load with the reason.
 #pragma once
 
-namespace charge_boots::hooks {
+namespace thruster_charge::hooks {
 
 // The hero's movement for the state he is in (+0x2084), once a tick from Hero_UpdateMotionInput
 // after it reads the stick: a case per state that sets his target speed and turn, steers or sets his
@@ -23,4 +23,4 @@ struct Hero_UpdateMovement {
     using fn = void (*)();
 };
 
-}  // namespace charge_boots::hooks
+}  // namespace thruster_charge::hooks
