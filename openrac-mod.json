@@ -2,12 +2,12 @@
   "format": 2,
   "id": "thruster-charge",
   "name": "Thruster Charge",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "author": "Henning Berge",
-  "description": "Going Commando's Charge Boots charge on Clank's Thruster-Pack, running Going Commando's own copied code: with the Thruster-Pack on, double-tap R1 and hold to charge along his facing in the Thruster long jump's pose, steering with the stick, the Thruster-Pack's flames blue; enemies in the way are hit, a wall bonks him back. It replaces the Thruster-Pack's hover; its long jump and air boost stay. Needs OpenRAC with the rac1.player.update_movement, rac1.fx.world_quad.draw, rac1.fx.thruster_flame.draw and rac1.fx.burst.spawn hook points.",
+  "description": "Going Commando's Charge Boots charge on Clank's Thruster-Pack, running Going Commando's own copied code: with the Thruster-Pack on, double-tap R1 and hold to charge along his facing in the Thruster long jump's pose, steering with the stick, the Thruster-Pack's flames blue; enemies in the way are hit, a wall bonks him back. It replaces the Thruster-Pack's hover; its long jump and air boost stay. Needs OpenRAC with mod interface 1.23 (the dev builds from 1.1.1-dev.1063; the next release).",
   "license": "GPL-3.0-or-later AND GPL-3.0-only",
   "homepage": "https://github.com/Promises/rac1-thruster-charge",
-  "api": "1.22",
+  "api": "1.23",
   "games": {
     "rac1": [
       "pal",
@@ -16,8 +16,12 @@
   },
   "hooks": [
     "rac1.player.update",
+    "rac1.player.update_movement",
     "rac1.player.enter_move_state",
-    "rac1.moby.moby167.update"
+    "rac1.moby.moby167.update",
+    "rac1.fx.thruster_flame.draw",
+    "rac1.fx.world_quad.draw",
+    "rac1.fx.burst.spawn"
   ],
   "settings": [
     {

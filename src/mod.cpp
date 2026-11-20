@@ -28,9 +28,8 @@
 //   rac1.fx.world_quad.draw              each effect quad: the flame's drawn in blue
 //   rac1.fx.burst.spawn                  each spark: the flame's spawned in blue
 // and the translation layer tints its ribbon's colour table.
-// The movement hook point and the three fx ones are new in OpenRAC (PR #617, branch rac1-steer-hook),
-// declared in branch_hooks.hpp until the SDK has them; a game without one refuses the mod with
-// the reason.
+// The movement hook point and the three fx ones came with OpenRAC #617 (interface 1.23, the dev
+// builds from 1.1.1-dev.1063); a game without one refuses the mod with the reason.
 //
 // The charge is his whenever the Thruster-Pack is on his back (the hover's own gate): its double tap
 // of R1 charges instead of hovering. With the Heli-Pack or no pack, R1 does what the game does. The
@@ -46,7 +45,6 @@
 #include "thruster_charge.hpp"
 #include "gc/rac1_shim.hpp"
 #include "layout.hpp"
-#include "branch_hooks.hpp"
 
 namespace {
 
@@ -54,11 +52,10 @@ namespace tc = thruster_charge;
 namespace gc = thruster_charge::gc;
 namespace rac1 = openrac::rac1;
 
-// TODO(branch hooks): openrac::rac1's types once the SDK has them (branch_hooks.hpp).
-using UpdateMovement = tc::hooks::Hero_UpdateMovement;
-using DrawWorldQuad = tc::hooks::FX_DrawWorldQuad;
-using DrawThrusterFlame = tc::hooks::FX_ThrusterFlame_Draw;
-using SpawnBurst = tc::hooks::FX_SpawnBurst;
+using UpdateMovement = rac1::Hero_UpdateMovement;
+using DrawWorldQuad = rac1::FX_DrawWorldQuad;
+using DrawThrusterFlame = rac1::FX_ThrusterFlame_Draw;
+using SpawnBurst = rac1::FX_SpawnBurst;
 
 // An effect quad record's four RGBA words (FX_DrawWorldQuad).
 constexpr std::uint32_t kQuadColours = 0x40;
@@ -317,4 +314,4 @@ void load(openrac::Mod& mod) {
 
 }  // namespace
 
-OPENRAC_MOD_CPP("thruster-charge", "1.0.1", load)
+OPENRAC_MOD_CPP("thruster-charge", "1.0.2", load)

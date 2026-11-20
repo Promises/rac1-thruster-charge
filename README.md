@@ -34,11 +34,11 @@ shakes at every jump back to its first frame, whatever the range; a single held 
 stiff. Back and forth between 3 and 5 at 0.75 is the pick. The game's log says how many frames the long
 jump's animation has, once a level.
 
-**Needs OpenRAC with the hook points from [OpenRAC PR #617](https://github.com/OpenRAC/OpenRAC/pull/617)** (`rac1.player.update_movement`,
-`rac1.fx.world_quad.draw`, `rac1.fx.thruster_flame.draw` and `rac1.fx.burst.spawn`), and mod
-interface 1.22 or later. Until a game has them, it refuses the mod and says why. The mod is built
-against the SDK's source at a commit of OpenRAC's `develop` (`sdk.lock`); the hook points are
-declared in `src/branch_hooks.hpp` until the SDK has them.
+**Needs OpenRAC with the hook points of [#617](https://github.com/OpenRAC/OpenRAC/pull/617)**
+(`rac1.player.update_movement`, `rac1.fx.world_quad.draw`, `rac1.fx.thruster_flame.draw` and
+`rac1.fx.burst.spawn`): merged, in OpenRAC's dev builds from 1.1.1-dev.1063 (mod interface 1.23),
+and in the next release. A game without them refuses the mod and says why. The mod is built
+against the SDK's source at the OpenRAC `develop` commit `sdk.lock` pins, which has them.
 
 ## How it works
 

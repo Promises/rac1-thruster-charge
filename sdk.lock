@@ -1,6 +1,6 @@
 {
-  "about": "The OpenRAC mod SDK this mod builds against: tools/fetch_sdk.py puts it in .sdk/, where CMakeLists.txt finds it. Until an SDK release has the hook points this mod needs (rac1.player.update_movement, rac1.fx.world_quad.draw, rac1.fx.thruster_flame.draw and rac1.fx.burst.spawn, declared in src/branch_hooks.hpp until then), it is the SDK's source at a commit of OpenRAC's develop; back to a release's url and sha256 once one has it.",
+  "about": "The OpenRAC mod SDK this mod builds against: tools/fetch_sdk.py puts it in .sdk/, where CMakeLists.txt finds it. It is the SDK's source at a commit of OpenRAC's develop that has the hook points this mod needs (OpenRAC #617: rac1.player.update_movement, rac1.fx.world_quad.draw, rac1.fx.thruster_flame.draw, rac1.fx.burst.spawn; the dev builds from 1.1.1-dev.1063); back to a release's url and sha256 once a release has them.",
   "version": "1.23.0",
   "git": "https://github.com/OpenRAC/OpenRAC",
-  "commit": "b4588cf86e531e909ee90ac83623fcef885c97f7"
+  "commit": "45b65baf80e10bcd7e137e7e25b1b160eff227ad"
 }
