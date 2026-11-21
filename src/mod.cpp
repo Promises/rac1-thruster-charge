@@ -28,7 +28,7 @@
 //   rac1.fx.world_quad.draw              each effect quad: the flame's drawn in blue
 //   rac1.fx.burst.spawn                  each spark: the flame's spawned in blue
 // and the translation layer tints its ribbon's colour table.
-// The movement hook point and the three fx ones came with OpenRAC #617 (interface 1.23, the dev
+// The movement hook point and the three fx ones need mod interface 1.23 (OpenRAC's dev
 // builds from 1.1.1-dev.1063); a game without one refuses the mod with the reason.
 //
 // The charge is his whenever the Thruster-Pack is on his back (the hover's own gate): its double tap
