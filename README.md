@@ -1,8 +1,8 @@
 # Thruster Charge
 
-![Ratchet charging down a tunnel on Clank's Thruster-Pack, its flames blue](docs/thruster-charge.png)
+[![Thruster Charge in game (video)](docs/video-thumbnail.jpg)](https://youtu.be/f8HDEewX6Qk)
 
-[Watch the 20-second clip (WebM)](docs/thruster-charge.webm)
+*▶ [Watch it on YouTube](https://youtu.be/f8HDEewX6Qk) (26 s, with sound).*
 
 A native mod for [OpenRAC](https://github.com/OpenRAC/OpenRAC)'s port of Ratchet & Clank: Going
 Commando's **Charge Boots** charge on Clank's **Thruster-Pack**, running **Going Commando's own
