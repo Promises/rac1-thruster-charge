@@ -23,9 +23,9 @@
 
 namespace thruster_charge {
 
-// openrac_api.set_motors: pad `port`'s motors (0 for player 1), `small` 0 or 1, `large` 0 to 255.
+// openrac_api.set_motors: pad `port`'s motors (0 for player 1), `small_motor` 0 or 1, `large_motor` 0 to 255.
 // Returns OPENRAC_HOOK_OK, or OPENRAC_HOOK_UNKNOWN when refused.
-using SetMotorsFn = int (*)(openrac_mod* mod, int port, int small, int large);
+using SetMotorsFn = int (*)(openrac_mod* mod, int port, int small_motor, int large_motor);
 
 // The interface that has it.
 constexpr int kSetMotorsMinor = 37;
