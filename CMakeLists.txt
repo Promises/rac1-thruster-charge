@@ -66,4 +66,6 @@ configure_file(THIRD_PARTY_NOTICES.md "${thruster_charge_package}/LICENSE.THIRD_
 enable_testing()
 add_executable(thruster_charge_test src/thruster_charge_test.cpp ${gc_layer} ${gc_copied})
 target_compile_features(thruster_charge_test PRIVATE cxx_std_17)
+# The SDK's openrac_mod.h, for the table motors.hpp reads set_motors from.
+target_link_libraries(thruster_charge_test PRIVATE OpenRAC::mod)
 add_test(NAME thruster_charge COMMAND thruster_charge_test)

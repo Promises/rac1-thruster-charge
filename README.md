@@ -29,6 +29,15 @@ the range, the same frame twice holds it still; **Pose: motion** is back and for
 the game's loop (it jumps back to the first frame, which shakes), or held still; **Pose: speed**
 (0.75) is how fast it goes back and forth, times the animation's own rate.
 
+**Rumble**: with the [Rumble](https://github.com/Promises/rac1-rumble) mod loaded and an OpenRAC
+with mod interface 1.37 (its `set_motors`), a charge rumbles: a short burst as it starts (the large
+motor at 200 easing down over 0.15 s, the small one on for its first three ticks), then a very low,
+steady hold (30 of 255) for as long as it lasts, and nothing once it ends; a pause, a menu or a
+scene stops it. The Rumble mod's **Strength** scales it; **Rumble while charging** (on) turns it
+off. Going Commando's Charge Boots themselves do not rumble: this is the mod's own. Without the
+Rumble mod, or on an OpenRAC before 1.37, the mod never touches the motors, and it still loads on
+1.23.
+
 Tuning notes, from the box (PAL): frames 6 and later are the long jump's landing; the game's loop
 shakes at every jump back to its first frame, whatever the range; a single held frame looks
 stiff. Back and forth between 3 and 5 at 0.75 is the pick. The game's log says how many frames the long

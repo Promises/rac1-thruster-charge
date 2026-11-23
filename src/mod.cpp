@@ -34,6 +34,12 @@
 // The charge is his whenever the Thruster-Pack is on his back (the hover's own gate): its double tap
 // of R1 charges instead of hovering. With the Heli-Pack or no pack, R1 does what the game does. The
 // Thruster-Pack's long jump and its boost in the air are the game's.
+//
+// The rumble (charge_rumble.hpp): after each tick (on_frame), a burst as a charge starts and a low
+// hold while it lasts, through the port's set_motors (interface 1.37, an optional call: motors.hpp)
+// and only with the Rumble mod loaded (the SDK's list of loaded mods, interface 1.14), at its
+// strength; the game's phase as the Rumble mod reads it (play_status), so a pause, a menu or a
+// scene stops it.
 #include <array>
 #include <cstdint>
 #include <cstring>
@@ -42,9 +48,11 @@
 #include "openrac/games/rac1.hpp"
 #include "openrac/mod.hpp"
 
+#include "charge_rumble.hpp"
 #include "thruster_charge.hpp"
 #include "gc/rac1_shim.hpp"
 #include "layout.hpp"
+#include "motors.hpp"
 
 namespace {
 
@@ -69,6 +77,14 @@ struct State {
     int level = -2;
     // On while the Thruster-Pack flame's own code runs in a charge.
     tc::FlameTint flames;
+    // The port's set_motors (null: none), the "rumble" setting, the Rumble mod as the last charge
+    // to start found it (loaded, its strength), and what the charge sends.
+    tc::SetMotorsFn set_motors = nullptr;
+    bool rumble_setting = true;
+    bool rumble_mod = false;
+    int rumble_strength = 100;
+    bool was_charging = false;
+    tc::ChargeRumble rumble;
 };
 
 State& state() {
@@ -85,6 +101,50 @@ void read_settings(openrac::Mod& mod) {
     layer().set_pose(mod.setting<std::int32_t>("pose_loop_from"), mod.setting<std::int32_t>("pose_loop_to"),
                      gc::pose_motion_named(mod.setting<std::string>("pose_motion").c_str()));
     layer().set_pose_speed(mod.setting<float>("pose_rate"));
+    state().rumble_setting = mod.setting<bool>("rumble");
+}
+
+// Whether the Rumble mod is loaded, and its strength, as it reads them now (interface 1.14's list
+// of loaded mods; none on a port without it).
+void find_rumble_mod(const openrac::Mod& mod) {
+    State& s = state();
+    s.rumble_mod = false;
+    s.rumble_strength = 100;
+    for (const openrac::ModEntry& entry : mod.mods()) {
+        if (entry.id != tc::kRumbleModId) {
+            continue;
+        }
+        s.rumble_mod = true;
+        for (const openrac::ModSetting& setting : mod.mod_settings(entry.index)) {
+            if (setting.key == tc::kRumbleStrengthKey) {
+                s.rumble_strength = tc::rumble_strength(setting.value.c_str());
+            }
+        }
+        return;
+    }
+}
+
+void send_motors(const tc::Motors& out) {
+    State& s = state();
+    if (out.send && s.set_motors != nullptr) {
+        s.set_motors(s.mod->handle(), 0, out.small, out.large);
+    }
+}
+
+// After each tick: the charge's rumble. Without set_motors nothing of this runs.
+void rumble_tick() {
+    State& s = state();
+    openrac::Mod& mod = *s.mod;
+    const bool charging = layer().charging();
+    if (charging && !s.was_charging) {
+        // Each charge looks again: the Rumble mod's strength may have changed in the game.
+        find_rumble_mod(mod);
+    }
+    s.was_charging = charging;
+    const bool playing = mod.loaded_level() >= 0 && mod.play_status().phase == OPENRAC_PLAY_PLAYING;
+    const float tick = tc::tick_seconds(mod.memory().read<float>(s.disc.frame_time));
+    const bool able = tc::rumble_able(s.set_motors != nullptr, s.rumble_mod, s.rumble_setting);
+    send_motors(s.rumble.tick(able, playing, charging, tick, s.rumble_strength));
 }
 
 // The game as the translation layer reaches it in the level loaded now: each level has its own
@@ -309,9 +369,26 @@ void load(openrac::Mod& mod) {
         mod.on_settings([] { read_settings(*state().mod); });
     }
 
+    // The charge's rumble, only where the port has set_motors (interface 1.37).
+    s.set_motors = tc::set_motors_of(&mod.api());
+    // The Rumble mod is looked for as each charge starts: a mod loaded after this one may not be
+    // listed yet.
+    if (s.set_motors != nullptr) {
+        mod.on_frame([] { rumble_tick(); });
+    }
+
     mod.info("Thruster Charge: with the Thruster-Pack on, double-tap R1 and hold to charge (Going Commando's Charge Boots code)");
 }
 
 }  // namespace
 
-OPENRAC_MOD_CPP("thruster-charge", "1.0.2", load)
+OPENRAC_MOD_CPP("thruster-charge", "1.1.0", load)
+
+// The program ends: the motors stop if the charge was rumbling (the port stops a mod's motors at its
+// unload too).
+extern "C" OPENRAC_MOD_EXPORT void openrac_mod_unload(void) {
+    State& s = state();
+    if (s.mod != nullptr) {
+        send_motors(s.rumble.stop());
+    }
+}

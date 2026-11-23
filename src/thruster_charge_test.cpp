@@ -15,6 +15,8 @@
 #include <utility>
 #include <vector>
 
+#include "charge_rumble.hpp"
+#include "motors.hpp"
 #include "thruster_charge.hpp"
 #include "gc/rac1_shim.hpp"
 
@@ -844,6 +846,130 @@ void the_pose_speed_scales_the_back_and_forth() {
     check(near(shown(f), 4.25f), "not a number: the default, still going back");
 }
 
+
+// --- The charge's rumble (charge_rumble.hpp, motors.hpp) ---
+
+void the_rumble_bursts_then_holds_then_stops() {
+    ChargeRumble r;
+    check(!r.tick(true, true, false, kNtsc, 100).send, "no charge: nothing sent");
+    std::vector<Motors> sent;
+    for (int i = 0; i < 30; ++i) {
+        sent.push_back(r.tick(true, true, true, kNtsc, 100));
+    }
+    check(sent[0].send && sent[0].large == kBurstLarge && sent[0].small == 1, "the first tick: the burst at full");
+    check(sent[1].small == 1 && sent[2].small == 1 && sent[3].small == 0, "the small motor on for three ticks");
+    bool falling = true;
+    for (int i = 1; i < 9; ++i) {
+        falling = falling && sent[i].large < sent[i - 1].large && sent[i].large > kHoldLarge;
+    }
+    check(falling, "the large motor eases down over the burst");
+    bool held = true;
+    for (int i = 9; i < 30; ++i) {
+        held = held && sent[i].send && sent[i].large == kHoldLarge && sent[i].small == 0;
+    }
+    check(held, "then the hold, steady, every tick, for as long as the charge lasts");
+    const Motors end = r.tick(true, true, false, kNtsc, 100);
+    check(end.send && end.small == 0 && end.large == 0, "the charge's end: one 0, 0");
+    check(!r.tick(true, true, false, kNtsc, 100).send, "then nothing");
+    const Motors again = r.tick(true, true, true, kNtsc, 100);
+    check(again.send && again.large == kBurstLarge, "the next charge bursts again");
+}
+
+void the_burst_lasts_as_long_on_pal() {
+    ChargeRumble r;
+    int burst = 0;
+    int small = 0;
+    for (int i = 0; i < 20; ++i) {
+        const Motors m = r.tick(true, true, true, kPal, 100);
+        burst += m.large > kHoldLarge ? 1 : 0;
+        small += m.small;
+    }
+    check(burst == 8 && small == 3, "0.15 s of burst (8 ticks at 50 a second), the small motor 3 of them");
+}
+
+void the_rumble_scales_with_the_rumble_mods_strength() {
+    check(ChargeRumble::scaled(0.0f, 50).large == 100 && ChargeRumble::scaled(0.0f, 50).small == 1,
+          "50%: half the large motor, the small one still on");
+    check(ChargeRumble::scaled(1.0f, 50).large == 15, "50%: half the hold");
+    check(ChargeRumble::scaled(0.0f, 30).small == 0, "30%: the small motor drops out, as the Rumble mod's does");
+    check(ChargeRumble::scaled(0.0f, 250).large == kBurstLarge, "over 100%: 100%");
+    ChargeRumble r;
+    check(!r.tick(true, true, true, kNtsc, 0).send && !r.tick(true, true, false, kNtsc, 0).send,
+          "0%: nothing sent, not even a stop");
+    check(rumble_strength("75") == 75 && rumble_strength("0") == 0 && rumble_strength("150") == 100 &&
+              rumble_strength("-5") == 0,
+          "the Rumble mod's strength read from its setting's text, clamped");
+    check(rumble_strength("") == 100 && rumble_strength(nullptr) == 100 && rumble_strength("x") == 100 &&
+              rumble_strength("50%") == 100,
+          "not a number: full strength");
+}
+
+void no_rumble_without_the_call_or_the_rumble_mod() {
+    check(rumble_able(true, true, true), "the call, the Rumble mod and the setting: it rumbles");
+    check(!rumble_able(false, true, true), "no set_motors: nothing");
+    check(!rumble_able(true, false, true), "no Rumble mod: nothing");
+    check(!rumble_able(true, true, false), "the setting off: nothing");
+    ChargeRumble r;
+    bool none = true;
+    for (int i = 0; i < 20; ++i) {
+        none = none && !r.tick(false, true, true, kNtsc, 100).send;
+    }
+    check(none, "a whole charge not able: nothing sent");
+    r.tick(true, true, true, kNtsc, 100);
+    const Motors off = r.tick(false, true, true, kNtsc, 100);
+    check(off.send && off.large == 0 && off.small == 0, "turned off mid-charge: one 0, 0");
+    check(!r.tick(false, true, true, kNtsc, 100).send, "then nothing");
+    for (int i = 0; i < 10; ++i) {
+        r.tick(false, true, true, kNtsc, 100);
+    }
+    const Motors back = r.tick(true, true, true, kNtsc, 100);
+    check(back.send && back.large == kHoldLarge, "back on in the same charge: the hold, no second burst");
+}
+
+void the_rumble_stops_on_pause_and_unload() {
+    ChargeRumble r;
+    r.tick(true, true, true, kNtsc, 100);
+    r.tick(true, true, true, kNtsc, 100);
+    const Motors paused = r.tick(true, false, true, kNtsc, 100);
+    check(paused.send && paused.large == 0 && paused.small == 0, "paused (or a menu, a scene): one 0, 0");
+    check(!r.tick(true, false, true, kNtsc, 100).send, "then nothing while paused");
+    const Motors resumed = r.tick(true, true, true, kNtsc, 100);
+    check(resumed.send && resumed.large == ChargeRumble::at(2 * kNtsc).large &&
+              resumed.small == ChargeRumble::at(2 * kNtsc).small,
+          "after it: the burst where it was");
+    const Motors unload = r.stop();
+    check(unload.send && unload.large == 0 && unload.small == 0, "unloaded while it rumbles: 0, 0");
+    check(!r.stop().send, "unloaded while quiet: nothing");
+}
+
+int fake_set_motors(openrac_mod*, int, int, int) { return OPENRAC_HOOK_OK; }
+
+// A port's table: 1.23's and room after it, as a newer port's is larger.
+struct FakeTable {
+    openrac_api api;
+    unsigned char more[1024];
+};
+
+void set_motors_is_read_only_from_a_port_that_has_it() {
+    static_assert(sizeof(FakeTable) >= kSetMotorsOffset + sizeof(SetMotorsFn), "room for set_motors");
+    check(sizeof(void*) != 8 || kSetMotorsOffset == 1800,
+          "64-bit: byte 1800, as the 1.37 header has it (motors.hpp)");
+    FakeTable t{};
+    const SetMotorsFn fn = fake_set_motors;
+    std::memcpy(reinterpret_cast<unsigned char*>(&t) + kSetMotorsOffset, &fn, sizeof fn);
+    t.api.size = static_cast<std::uint32_t>(kSetMotorsOffset + sizeof(SetMotorsFn));
+    t.api.api_minor = 37;
+    check(set_motors_of(&t.api) == fake_set_motors, "interface 1.37 and a table that covers it: the call");
+    t.api.api_minor = 36;
+    check(set_motors_of(&t.api) == nullptr, "interface 1.36: none");
+    t.api.api_minor = 37;
+    t.api.size = static_cast<std::uint32_t>(kSetMotorsOffset);
+    check(set_motors_of(&t.api) == nullptr, "a table that ends before it: none");
+    t.api.api_minor = 23;
+    t.api.size = sizeof(openrac_api);
+    check(set_motors_of(&t.api) == nullptr, "a port of 1.23: none");
+    check(set_motors_of(nullptr) == nullptr, "no table: none");
+}
 }  // namespace
 
 int main() {
@@ -872,6 +998,12 @@ int main() {
     one_blue_for_every_part_of_the_flame();
     the_tint_is_only_the_flames_in_a_charge();
     the_ribbon_is_blue_in_a_charge();
+    the_rumble_bursts_then_holds_then_stops();
+    the_burst_lasts_as_long_on_pal();
+    the_rumble_scales_with_the_rumble_mods_strength();
+    no_rumble_without_the_call_or_the_rumble_mod();
+    the_rumble_stops_on_pause_and_unload();
+    set_motors_is_read_only_from_a_port_that_has_it();
     if (failures != 0) {
         std::printf("%d failed\n", failures);
         return 1;
